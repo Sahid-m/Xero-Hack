@@ -177,6 +177,66 @@ async def configure_invoice_defaults(
 
 
 # ---------------------------------------------------------------------------
+# Read tools
+# ---------------------------------------------------------------------------
+
+
+@ai.tool
+async def get_organisation_info(session_id: str) -> str:
+    """Get the connected Xero organisation name, legal name, and country."""
+    accounting, tenant_id = get_accounting_api(session_id)
+    result = accounting.get_organisations(tenant_id)
+    if not result.organisations:
+        return json.dumps({"error": "No organisation found for this connection."})
+    org = result.organisations[0]
+    return json.dumps(
+        {
+            "name": org.name,
+            "legal_name": org.legal_name,
+            "organisation_type": org.organisation_type,
+            "country_code": org.country_code,
+            "base_currency": org.base_currency,
+            "audit": f"Connected to {org.name}.",
+        }
+    )
+
+
+@ai.tool
+async def list_contacts(
+    session_id: str,
+    contact_type: str = "all",
+    limit: int = 20,
+) -> str:
+    """List contacts from Xero. contact_type: all, customer, or supplier."""
+    accounting, tenant_id = get_accounting_api(session_id)
+    where = None
+    if contact_type == "customer":
+        where = "IsCustomer==true"
+    elif contact_type == "supplier":
+        where = "IsSupplier==true"
+
+    result = accounting.get_contacts(tenant_id, where=where, page=1)
+    contacts = result.contacts or []
+    summary = [
+        {
+            "name": c.name,
+            "email": c.email_address,
+            "is_customer": c.is_customer,
+            "is_supplier": c.is_supplier,
+        }
+        for c in contacts[:limit]
+    ]
+    return json.dumps(
+        {
+            "count": len(summary),
+            "total_on_page": len(contacts),
+            "contacts": summary,
+            "audit": f"Found {len(summary)} contacts.",
+        }
+    )
+
+
+# ---------------------------------------------------------------------------
 # Daily verb tools
 # ---------------------------------------------------------------------------
 
@@ -301,8 +361,13 @@ OPERATIONS_TOOLS: list[ai.AgentTool] = [
     set_service_rate,
 ]
 
-ALL_TOOLS: list[ai.AgentTool] = SETUP_TOOLS + [
+READ_TOOLS: list[ai.AgentTool] = [
+    get_organisation_info,
+    list_contacts,
     get_amount_owed,
+]
+
+ALL_TOOLS: list[ai.AgentTool] = SETUP_TOOLS + READ_TOOLS + [
     draft_invoice,
     send_invoice,
 ]

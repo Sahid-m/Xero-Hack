@@ -29,9 +29,10 @@ import {
 } from "@/lib/storage";
 
 const STARTERS = [
-  "I run a café in Bristol — help me get set up on Xero.",
   "What can you access from my Xero account?",
-  "Bill the Hendersons — two hours labour plus £40 parts.",
+  "How much am I owed right now?",
+  "I run a café — help me get set up on Xero.",
+  "What's the difference between sole trader and Ltd for VAT?",
 ];
 
 function useSessionId(): string | null {
@@ -166,11 +167,11 @@ function VocaChatInner({ sessionId }: { sessionId: string }) {
                 <Sparkles className="size-7 text-[#13b5ea]" />
               </div>
               <h2 className="text-xl font-semibold text-zinc-100">
-                Set up Xero in 90 seconds
+                Your Xero assistant
               </h2>
               <p className="mt-2 text-sm leading-relaxed text-zinc-500">
-                Tell Voca about your business. It configures contacts, VAT, and invoices
-                while you talk — no spreadsheets, no chart-of-accounts lecture.
+                Ask about your books, invoice a customer, or run a quick setup — all in
+                plain English. No menus, no accounting degree required.
               </p>
               {!xeroConnected && (
                 <p className="mt-4 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-200/90">
@@ -283,8 +284,8 @@ function VocaChatInner({ sessionId }: { sessionId: string }) {
               onChange={(e) => setInput(e.target.value)}
               placeholder={
                 xeroConnected
-                  ? "Tell Voca what to do…"
-                  : "Connect Xero to get started…"
+                  ? "Ask anything or tell Voca what to do…"
+                  : "Ask a question, or connect Xero for live data…"
               }
               disabled={isLoading}
               className="flex-1 rounded-xl border border-white/[0.08] bg-zinc-900/80 px-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-[#13b5ea]/40 focus:outline-none focus:ring-2 focus:ring-[#13b5ea]/20 disabled:opacity-50"

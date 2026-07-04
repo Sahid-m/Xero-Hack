@@ -6,10 +6,11 @@ import os
 
 import ai
 
-from app.agent.prompts import OPERATIONS_SYSTEM, SETUP_SYSTEM
-from app.agent.tools.xero import ALL_TOOLS, OPERATIONS_TOOLS, SETUP_TOOLS
+from app.agent.prompts import SETUP_INTERVIEW_HINT, VOCA_SYSTEM
+from app.agent.tools.xero import ALL_TOOLS
 from app.config import get_settings
-from app.session import session_mode
+from app.session import get_session
+from app.xero_client import is_connected
 
 settings = get_settings()
 
@@ -18,18 +19,35 @@ if settings.anthropic_api_key:
 
 MODEL = ai.get_model(settings.ai_default_model)
 
-setup_agent = ai.Agent(tools=SETUP_TOOLS)
-operations_agent = ai.Agent(tools=OPERATIONS_TOOLS)
 voca_agent = ai.Agent(tools=ALL_TOOLS)
 
 
 def system_prompt_for_session(session_id: str | None) -> str:
-    mode = session_mode(session_id)
-    base = SETUP_SYSTEM if mode == "setup" else OPERATIONS_SYSTEM
-    if session_id:
-        return f"{base}\n\nCurrent session_id for tool calls: {session_id}"
-    return base
+    parts = [VOCA_SYSTEM]
+
+    if not session_id:
+        return VOCA_SYSTEM
+
+    session = get_session(session_id)
+    connected = is_connected(session_id)
+    parts.append(f"\nCurrent session_id for tool calls: {session_id}")
+    parts.append(f"Xero connected: {'yes' if connected else 'no — general Q&A only; connect for live data and writes'}")
+
+    if session.get("business_type"):
+        parts.append(f"Known business type: {session['business_type']}")
+    if session.get("org_type"):
+        parts.append(f"Organisation type: {session['org_type']}")
+    if session.get("vat_registered") is not None:
+        scheme = session.get("vat_scheme", "none")
+        parts.append(f"VAT: {'registered' if session['vat_registered'] else 'not registered'} ({scheme})")
+
+    step = session.get("interview_step", 0)
+    mode = session.get("mode", "setup")
+    if mode == "setup" and 0 < step < 6:
+        parts.append(SETUP_INTERVIEW_HINT.format(step=step))
+
+    return "\n".join(parts)
 
 
 def agent_for_session(session_id: str | None) -> ai.Agent:
-    return setup_agent if session_mode(session_id) == "setup" else operations_agent
+    return voca_agent
