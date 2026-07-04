@@ -12,6 +12,11 @@ from xero_python.api_client.oauth2 import OAuth2Token
 from xero_python.identity import IdentityApi
 
 from app.config import Settings, get_settings
+from app.db import (
+    db_enabled,
+    load_xero_tokens as db_load_tokens,
+    save_xero_tokens as db_save_tokens,
+)
 
 TOKEN_DIR = Path("data/xero")
 TOKEN_DIR.mkdir(parents=True, exist_ok=True)
@@ -33,19 +38,32 @@ def _token_path(session_id: str) -> Path:
     return TOKEN_DIR / f"{safe}.json"
 
 
-def load_tokens(session_id: str) -> dict[str, Any] | None:
+def _file_load_tokens(session_id: str) -> dict[str, Any] | None:
     path = _token_path(session_id)
     if not path.exists():
         return None
     return json.loads(path.read_text())
 
 
-def save_tokens(session_id: str, tokens: dict[str, Any] | None) -> None:
+def _file_save_tokens(session_id: str, tokens: dict[str, Any] | None) -> None:
     path = _token_path(session_id)
     if tokens is None:
         path.unlink(missing_ok=True)
         return
     path.write_text(json.dumps(tokens, indent=2))
+
+
+def load_tokens(session_id: str) -> dict[str, Any] | None:
+    if db_enabled():
+        return db_load_tokens(session_id)
+    return _file_load_tokens(session_id)
+
+
+def save_tokens(session_id: str, tokens: dict[str, Any] | None) -> None:
+    if db_enabled():
+        db_save_tokens(session_id, tokens)
+    else:
+        _file_save_tokens(session_id, tokens)
 
 
 def is_connected(session_id: str) -> bool:

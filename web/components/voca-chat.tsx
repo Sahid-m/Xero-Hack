@@ -11,8 +11,24 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AgentActivity } from "./agent-activity";
 import { ToolCallCard } from "./tool-call-card";
 
-export function VocaChat() {
-  const sessionId = useMemo(() => crypto.randomUUID(), []);
+const SESSION_KEY = "voca_session_id";
+
+function useSessionId(): string | null {
+  const [sessionId, setSessionId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let id = sessionStorage.getItem(SESSION_KEY);
+    if (!id) {
+      id = crypto.randomUUID();
+      sessionStorage.setItem(SESSION_KEY, id);
+    }
+    setSessionId(id);
+  }, []);
+
+  return sessionId;
+}
+
+function VocaChatInner({ sessionId }: { sessionId: string }) {
   const [input, setInput] = useState("");
   const [xeroConnected, setXeroConnected] = useState(false);
 
@@ -28,6 +44,7 @@ export function VocaChat() {
     if (params.get("xero") === "connected") {
       setXeroConnected(true);
       window.history.replaceState({}, "", "/");
+      checkXeroStatus();
     }
   }, [checkXeroStatus]);
 
@@ -53,6 +70,7 @@ export function VocaChat() {
   });
 
   const isLoading = status === "submitted" || status === "streaming";
+  const sessionShort = sessionId.slice(0, 8);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -84,7 +102,7 @@ export function VocaChat() {
               </h1>
               <p className="text-xs text-zinc-500">
                 Xero without ever opening Xero · session{" "}
-                <span className="font-mono text-zinc-600">{sessionId.slice(0, 8)}</span>
+                <span className="font-mono text-zinc-600">{sessionShort}</span>
               </p>
             </div>
             <div className="ml-auto flex items-center gap-3">
@@ -112,13 +130,20 @@ export function VocaChat() {
         <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6">
           {messages.length === 0 ? (
             <div className="mx-auto max-w-xl text-center pt-16">
+              {!xeroConnected && (
+                <p className="text-amber-400/90 text-sm mb-4">
+                  Connect Xero first so Voca can configure your books.
+                </p>
+              )}
               <p className="text-zinc-400 text-sm leading-relaxed">
                 Try:{" "}
                 <button
                   type="button"
                   className="text-teal-400 hover:underline"
                   onClick={() =>
-                    sendMessage({ text: "I run a café in Bristol. Help me get set up on Xero." })
+                    sendMessage({
+                      text: "I run a café in Bristol. Help me get set up on Xero.",
+                    })
                   }
                 >
                   &ldquo;I run a café in Bristol…&rdquo;
@@ -225,4 +250,18 @@ export function VocaChat() {
       </div>
     </div>
   );
+}
+
+export function VocaChat() {
+  const sessionId = useSessionId();
+
+  if (!sessionId) {
+    return (
+      <div className="flex flex-1 items-center justify-center text-sm text-zinc-500">
+        Loading session…
+      </div>
+    );
+  }
+
+  return <VocaChatInner sessionId={sessionId} />;
 }
