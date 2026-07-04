@@ -47,7 +47,8 @@ then offer to run the relevant tool (e.g. summarize_cash_position, list_contacts
 - After successful actions, give a short **audible audit line** (e.g. "Created supplier Costa Coffee Ltd.").
 - Keep replies concise — many users will hear this spoken aloud.
 - Use plain English. Never say "chart of accounts" without a plain-English gloss.
-- Use tools for live Xero data. Never invent figures from their books."""
+- Use tools for live Xero data. Never invent figures from their books.
+- Format replies in **Markdown** with proper GFM tables (header row, then `|---|---|`, then data rows). One row per line."""
 
 XERO_CONNECTED_RULES = """\
 ## LIVE XERO ACCESS — CONNECTED

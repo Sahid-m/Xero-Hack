@@ -1,5 +1,8 @@
 import { backendFetch, normalizeChatBody, relayStreamResponse } from "@/lib/backend";
 
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
 export async function POST(req: Request) {
   const body = (await req.json()) as Record<string, unknown>;
 

@@ -20,8 +20,9 @@ export function relayStreamResponse(res: Response): Response {
     headers.set("x-vercel-ai-ui-message-stream", streamHeader);
   }
   headers.set("Content-Type", res.headers.get("Content-Type") ?? "text/event-stream");
-  headers.set("Cache-Control", "no-cache");
+  headers.set("Cache-Control", "no-cache, no-transform");
   headers.set("Connection", "keep-alive");
+  headers.set("X-Accel-Buffering", "no");
 
   return new Response(res.body, { status: res.status, headers });
 }
