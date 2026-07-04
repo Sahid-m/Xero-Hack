@@ -26,6 +26,8 @@ AUTHORIZE_URL = "https://login.xero.com/identity/connect/authorize"
 TOKEN_URL = "https://identity.xero.com/connect/token"
 CONNECTIONS_URL = "https://api.xero.com/connections"
 
+# Granular scopes (required for apps created after March 2026).
+# Enable the same scopes in developer.xero.com → your app → Configuration.
 SCOPES = [
     "openid",
     "profile",
@@ -33,8 +35,12 @@ SCOPES = [
     "offline_access",
     "accounting.settings",
     "accounting.contacts",
-    "accounting.transactions",
-    "accounting.reports.read",
+    "accounting.invoices",
+    "accounting.payments",
+    "accounting.banktransactions",
+    "accounting.attachments",
+    "accounting.reports.aged.read",
+    "accounting.reports.profitandloss.read",
 ]
 
 
