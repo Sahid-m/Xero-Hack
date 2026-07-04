@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.agent.voca_agent import MODEL, agent_for_session, system_prompt_for_session
-from app.session_context import bind_voca_session, reset_voca_session
+from app.session_context import bind_request_context, reset_request_context
 
 if TYPE_CHECKING:
     pass
@@ -27,23 +27,39 @@ class ChatRequest(BaseModel):
     model_config = {"extra": "ignore"}
 
     messages: list[ai.agents.ui.ai_sdk.UIMessage]
-    session_id: str | None = Field(default=None, description="Voca session for interview state")
+    session_id: str | None = Field(default=None, description="Chat session for history and setup state")
+    connection_id: str | None = Field(default=None, description="Stable id for Xero OAuth tokens")
+    legacy_session_ids: list[str] = Field(default_factory=list)
     id: str | None = Field(default=None, description="Chat id from AI SDK (fallback session key)")
 
 
-def _resolve_session_id(request: ChatRequest) -> str | None:
+def _resolve_chat_session(request: ChatRequest) -> str | None:
     return request.session_id or request.id
+
+
+def _resolve_connection_id(request: ChatRequest, chat_session_id: str | None) -> str | None:
+    return request.connection_id or chat_session_id
 
 
 @router.post("/chat")
 async def chat(request: ChatRequest) -> StreamingResponse:
-    session_id = _resolve_session_id(request)
+    chat_session_id = _resolve_chat_session(request)
+    connection_id = _resolve_connection_id(request, chat_session_id)
     messages, approvals = ai.agents.ui.ai_sdk.to_messages(request.messages)
     ai.agents.ui.ai_sdk.apply_approvals(approvals)
 
-    full_messages = [ai.system_message(system_prompt_for_session(session_id)), *messages]
-    agent = agent_for_session(session_id)
-    session_token = bind_voca_session(session_id)
+    full_messages = [
+        ai.system_message(
+            system_prompt_for_session(
+                chat_session_id,
+                connection_id,
+                request.legacy_session_ids,
+            )
+        ),
+        *messages,
+    ]
+    agent = agent_for_session(chat_session_id)
+    chat_token, xero_token = bind_request_context(chat_session_id, connection_id)
 
     async def stream_response() -> AsyncGenerator[str]:
         try:
@@ -58,7 +74,7 @@ async def chat(request: ChatRequest) -> StreamingResponse:
                 async for chunk in ai.agents.ui.ai_sdk.to_sse(process()):
                     yield chunk
         finally:
-            reset_voca_session(session_token)
+            reset_request_context(chat_token, xero_token)
 
     return StreamingResponse(
         stream_response(),

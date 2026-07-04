@@ -9,6 +9,8 @@ export async function POST(req: Request) {
     body: JSON.stringify({
       messages: body.messages,
       session_id: body.session_id ?? body.sessionId ?? body.id,
+      connection_id: body.connection_id ?? body.connectionId,
+      legacy_session_ids: body.legacy_session_ids ?? body.legacySessionIds ?? [],
     }),
   });
 

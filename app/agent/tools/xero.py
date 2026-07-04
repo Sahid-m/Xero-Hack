@@ -9,7 +9,7 @@ import ai
 from xero_python.accounting.models import Contact, Contacts, Invoice, Invoices, LineItem
 
 from app.session import get_session, save_session
-from app.session_context import voca_session_id
+from app.session_context import chat_session_id, xero_connection_id
 from app.xero_client import get_accounting_api
 from app.agent.tools.xero_queries import QUERY_TOOLS
 
@@ -23,7 +23,7 @@ async def configure_business_type(
     business_type: str,
 ) -> str:
     """Trim chart of accounts for the business sector (e.g. café, plumbing)."""
-    session_id = voca_session_id()
+    session_id = chat_session_id()
     session = get_session(session_id)
     session["business_type"] = business_type
     session["interview_step"] = max(session.get("interview_step", 0), 1)
@@ -43,7 +43,7 @@ async def configure_organisation_type(
     org_type: str,
 ) -> str:
     """Set sole trader vs limited company financial defaults."""
-    session_id = voca_session_id()
+    session_id = chat_session_id()
     session = get_session(session_id)
     session["org_type"] = org_type
     session["interview_step"] = max(session.get("interview_step", 0), 2)
@@ -63,7 +63,7 @@ async def configure_vat(
     scheme: str = "none",
 ) -> str:
     """Configure VAT registration and scheme (standard, flat_rate, none)."""
-    session_id = voca_session_id()
+    session_id = chat_session_id()
     session = get_session(session_id)
     session["vat_registered"] = vat_registered
     session["vat_scheme"] = scheme
@@ -79,8 +79,8 @@ async def configure_vat(
 @ai.tool(require_approval=True)
 async def create_supplier(name: str, email: str = "") -> str:
     """Create a supplier contact in Xero."""
-    session_id = voca_session_id()
-    accounting, tenant_id = get_accounting_api(session_id)
+    session_id = chat_session_id()
+    accounting, tenant_id = get_accounting_api(xero_connection_id())
     result = accounting.create_contacts(
         tenant_id,
         Contacts(
@@ -110,8 +110,8 @@ async def create_supplier(name: str, email: str = "") -> str:
 @ai.tool(require_approval=True)
 async def create_customer(name: str, email: str = "") -> str:
     """Create a customer contact in Xero."""
-    session_id = voca_session_id()
-    accounting, tenant_id = get_accounting_api(session_id)
+    session_id = chat_session_id()
+    accounting, tenant_id = get_accounting_api(xero_connection_id())
     result = accounting.create_contacts(
         tenant_id,
         Contacts(
@@ -145,7 +145,7 @@ async def set_service_rate(
     unit: str = "hour",
 ) -> str:
     """Store a usual service rate for invoice line items."""
-    session_id = voca_session_id()
+    session_id = chat_session_id()
     session = get_session(session_id)
     rates: dict[str, Any] = session.setdefault("rates", {})
     rates[service_name.lower()] = {"rate_gbp": rate_gbp, "unit": unit}
@@ -165,7 +165,7 @@ async def configure_invoice_defaults(
     payment_terms_days: int = 14,
 ) -> str:
     """Set default payment terms and complete setup interview."""
-    session_id = voca_session_id()
+    session_id = chat_session_id()
     session = get_session(session_id)
     session["payment_terms_days"] = payment_terms_days
     session["interview_step"] = 6
@@ -192,8 +192,8 @@ async def draft_invoice(
     reference: str = "",
 ) -> str:
     """Draft an ACCREC invoice. Each line_item: description, quantity, unit_amount, account_code."""
-    session_id = voca_session_id()
-    accounting, tenant_id = get_accounting_api(session_id)
+    session_id = chat_session_id()
+    accounting, tenant_id = get_accounting_api(xero_connection_id())
     session = get_session(session_id)
     vat = session.get("vat_registered", False)
 
@@ -254,8 +254,8 @@ async def draft_invoice(
 @ai.tool(require_approval=True)
 async def send_invoice(invoice_id: str) -> str:
     """Send a draft invoice to the customer."""
-    session_id = voca_session_id()
-    accounting, tenant_id = get_accounting_api(session_id)
+    session_id = chat_session_id()
+    accounting, tenant_id = get_accounting_api(xero_connection_id())
     accounting.update_invoice(
         tenant_id,
         invoice_id,

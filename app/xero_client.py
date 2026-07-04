@@ -101,19 +101,67 @@ def save_tokens(session_id: str, tokens: dict[str, Any] | None) -> None:
         _file_save_tokens(session_id, tokens)
 
 
-def is_connected(session_id: str) -> bool:
-    stored = load_tokens(session_id)
+def is_connected(connection_id: str) -> bool:
+    stored = load_tokens(connection_id)
     return bool(stored and stored.get("access_token") and stored.get("tenant_id"))
 
 
-def authorization_url(session_id: str, settings: Settings | None = None) -> str:
+def migrate_tokens(from_id: str, to_id: str) -> bool:
+    """Copy Xero tokens between ids (e.g. legacy chat session → stable connection id)."""
+    if not from_id or not to_id or from_id == to_id:
+        return is_connected(to_id)
+    if is_connected(to_id):
+        return True
+    source = load_tokens(from_id)
+    if not source:
+        return False
+    save_tokens(to_id, source)
+    return True
+
+
+def resolve_xero_connection(connection_id: str, legacy_ids: list[str] | None = None) -> str:
+    """Ensure tokens exist on connection_id, migrating from legacy ids if needed."""
+    if is_connected(connection_id):
+        return connection_id
+    for legacy_id in legacy_ids or []:
+        if migrate_tokens(legacy_id, connection_id):
+            return connection_id
+    if _adopt_recent_connection(connection_id):
+        return connection_id
+    return connection_id
+
+
+def _adopt_recent_connection(target_id: str) -> bool:
+    """Demo fallback: reuse the latest Xero connection in the database."""
+    if is_connected(target_id) or not db_enabled():
+        return False
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT session_id FROM voca_sessions
+            WHERE xero_tokens IS NOT NULL
+              AND xero_tokens->>'access_token' IS NOT NULL
+            ORDER BY updated_at DESC
+            LIMIT 5
+            """
+        ).fetchall()
+    for row in rows:
+        source_id = row["session_id"]
+        if source_id != target_id and migrate_tokens(source_id, target_id):
+            return True
+    return False
+
+
+def authorization_url(connection_id: str, settings: Settings | None = None) -> str:
     settings = settings or get_settings()
     params = {
         "response_type": "code",
         "client_id": settings.xero_client_id,
         "redirect_uri": settings.xero_redirect_uri,
         "scope": " ".join(SCOPES),
-        "state": session_id,
+        "state": connection_id,
     }
     return f"{AUTHORIZE_URL}?{urlencode(params)}"
 
@@ -169,7 +217,7 @@ def _resolve_tenant_id(access_token: str) -> str:
 
 def exchange_oauth_code(
     callback_url: str,
-    session_id: str,
+    connection_id: str,
     settings: Settings | None = None,
 ) -> dict[str, Any]:
     settings = settings or get_settings()
@@ -181,16 +229,16 @@ def exchange_oauth_code(
     token = _exchange_code_for_token(code_list[0], settings)
     tenant_id = _resolve_tenant_id(token["access_token"])
     tokens = {**token, "tenant_id": tenant_id}
-    save_tokens(session_id, tokens)
+    save_tokens(connection_id, tokens)
     return tokens
 
 
-def ensure_token(session_id: str, settings: Settings | None = None) -> dict[str, Any]:
+def ensure_token(connection_id: str, settings: Settings | None = None) -> dict[str, Any]:
     settings = settings or get_settings()
-    token = load_tokens(session_id)
+    token = load_tokens(connection_id)
     if not token or not token.get("access_token"):
         raise RuntimeError(
-            f"Xero not connected for this session. Connect at /auth/xero?session_id={session_id}"
+            f"Xero not connected. Connect at /auth/xero?connection_id={connection_id}"
         )
 
     expires_at = token.get("expires_at")
@@ -198,12 +246,12 @@ def ensure_token(session_id: str, settings: Settings | None = None) -> dict[str,
         if not token.get("refresh_token"):
             raise RuntimeError("Xero token expired and no refresh token available.")
         token = _refresh_access_token(token, settings)
-        save_tokens(session_id, token)
+        save_tokens(connection_id, token)
 
     return token
 
 
-def _api_client_for_session(session_id: str, settings: Settings) -> ApiClient:
+def _api_client_for_session(connection_id: str, settings: Settings) -> ApiClient:
     api_client = ApiClient(
         Configuration(
             oauth2_token=OAuth2Token(
@@ -216,15 +264,15 @@ def _api_client_for_session(session_id: str, settings: Settings) -> ApiClient:
 
     @api_client.oauth2_token_getter
     def obtain_token() -> dict[str, Any] | None:
-        stored = load_tokens(session_id)
+        stored = load_tokens(connection_id)
         return _sdk_token(stored) if stored else None
 
     @api_client.oauth2_token_saver
     def store_token(token: dict[str, Any]) -> None:
-        existing = load_tokens(session_id) or {}
-        save_tokens(session_id, {**existing, **_sdk_token(token)})
+        existing = load_tokens(connection_id) or {}
+        save_tokens(connection_id, {**existing, **_sdk_token(token)})
 
-    stored = load_tokens(session_id)
+    stored = load_tokens(connection_id)
     if stored:
         api_client.set_oauth2_token(_sdk_token(stored))
 
@@ -232,14 +280,14 @@ def _api_client_for_session(session_id: str, settings: Settings) -> ApiClient:
 
 
 def get_accounting_api(
-    session_id: str,
+    connection_id: str,
     settings: Settings | None = None,
 ) -> tuple[AccountingApi, str]:
     settings = settings or get_settings()
-    token = ensure_token(session_id, settings)
+    token = ensure_token(connection_id, settings)
     tenant_id = token.get("tenant_id")
     if not tenant_id:
         raise RuntimeError("Missing tenant_id — reconnect Xero.")
 
-    api_client = _api_client_for_session(session_id, settings)
+    api_client = _api_client_for_session(connection_id, settings)
     return AccountingApi(api_client), tenant_id

@@ -17,7 +17,7 @@ from app.agent.tools.xero_serialize import (
     slim_payment,
     tool_result,
 )
-from app.session_context import voca_session_id
+from app.session_context import xero_connection_id
 from app.xero_client import get_accounting_api
 
 InvoiceType = Literal["ACCREC", "ACCPAY", "all"]
@@ -30,7 +30,7 @@ def _clamp(limit: int, cap: int = 50) -> int:
 
 
 def _api():
-    return get_accounting_api(voca_session_id())
+    return get_accounting_api(xero_connection_id())
 
 
 # ---------------------------------------------------------------------------

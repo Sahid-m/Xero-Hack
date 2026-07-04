@@ -10,7 +10,7 @@ from app.agent.prompts import SETUP_INTERVIEW_HINT, VOCA_SYSTEM, XERO_CONNECTED_
 from app.agent.tools.xero import ALL_TOOLS
 from app.config import get_settings
 from app.session import get_session
-from app.xero_client import is_connected
+from app.xero_client import is_connected, resolve_xero_connection
 
 settings = get_settings()
 
@@ -22,33 +22,42 @@ MODEL = ai.get_model(settings.ai_default_model)
 voca_agent = ai.Agent(tools=ALL_TOOLS)
 
 
-def system_prompt_for_session(session_id: str | None) -> str:
+def system_prompt_for_session(
+    chat_session_id: str | None,
+    xero_connection_id: str | None = None,
+    legacy_connection_ids: list[str] | None = None,
+) -> str:
     parts = [VOCA_SYSTEM]
 
-    if not session_id:
+    connection_id = xero_connection_id or chat_session_id
+    if connection_id:
+        resolve_xero_connection(connection_id, legacy_connection_ids)
+
+    if not connection_id:
         parts.append(XERO_DISCONNECTED_RULES)
         return "\n".join(parts)
 
-    session = get_session(session_id)
-    connected = is_connected(session_id)
+    connected = is_connected(connection_id)
 
     if connected:
         parts.append(XERO_CONNECTED_RULES)
     else:
         parts.append(XERO_DISCONNECTED_RULES)
 
-    if session.get("business_type"):
-        parts.append(f"Known business type: {session['business_type']}")
-    if session.get("org_type"):
-        parts.append(f"Organisation type: {session['org_type']}")
-    if session.get("vat_registered") is not None:
-        scheme = session.get("vat_scheme", "none")
-        parts.append(f"VAT: {'registered' if session['vat_registered'] else 'not registered'} ({scheme})")
+    if chat_session_id:
+        session = get_session(chat_session_id)
+        if session.get("business_type"):
+            parts.append(f"Known business type: {session['business_type']}")
+        if session.get("org_type"):
+            parts.append(f"Organisation type: {session['org_type']}")
+        if session.get("vat_registered") is not None:
+            scheme = session.get("vat_scheme", "none")
+            parts.append(f"VAT: {'registered' if session['vat_registered'] else 'not registered'} ({scheme})")
 
-    step = session.get("interview_step", 0)
-    mode = session.get("mode", "setup")
-    if mode == "setup" and 0 < step < 6:
-        parts.append(SETUP_INTERVIEW_HINT.format(step=step))
+        step = session.get("interview_step", 0)
+        mode = session.get("mode", "setup")
+        if mode == "setup" and 0 < step < 6:
+            parts.append(SETUP_INTERVIEW_HINT.format(step=step))
 
     return "\n".join(parts)
 

@@ -23,6 +23,8 @@ import { MessageContent } from "./message-content";
 import { ToolCallCard } from "./tool-call-card";
 import {
   clearChat,
+  getLegacySessionIds,
+  getOrCreateConnectionId,
   getOrCreateSessionId,
   loadMessages,
   saveMessages,
@@ -35,23 +37,40 @@ const STARTERS = [
   "List my unpaid bills.",
 ];
 
+function useConnectionId(): string | null {
+  const [connectionId, setConnectionId] = useState<string | null>(null);
+  useEffect(() => setConnectionId(getOrCreateConnectionId()), []);
+  return connectionId;
+}
+
 function useSessionId(): string | null {
   const [sessionId, setSessionId] = useState<string | null>(null);
   useEffect(() => setSessionId(getOrCreateSessionId()), []);
   return sessionId;
 }
 
-function VocaChatInner({ sessionId }: { sessionId: string }) {
+function VocaChatInner({
+  sessionId,
+  connectionId,
+}: {
+  sessionId: string;
+  connectionId: string;
+}) {
   const [input, setInput] = useState("");
   const [xeroConnected, setXeroConnected] = useState(false);
   const [initialMessages] = useState<UIMessage[]>(() => loadMessages(sessionId));
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const checkXeroStatus = useCallback(async () => {
-    const res = await fetch(`/api/xero/status?session_id=${sessionId}`);
+    const legacy = getLegacySessionIds(connectionId, sessionId);
+    const params = new URLSearchParams({
+      connection_id: connectionId,
+      legacy_session_ids: legacy.join(","),
+    });
+    const res = await fetch(`/api/xero/status?${params}`);
     const data = await res.json();
     setXeroConnected(Boolean(data.connected));
-  }, [sessionId]);
+  }, [connectionId, sessionId]);
 
   useEffect(() => {
     checkXeroStatus();
@@ -62,13 +81,22 @@ function VocaChatInner({ sessionId }: { sessionId: string }) {
     }
   }, [checkXeroStatus]);
 
+  const legacySessionIds = useMemo(
+    () => getLegacySessionIds(connectionId, sessionId),
+    [connectionId, sessionId],
+  );
+
   const transport = useMemo(
     () =>
       new DefaultChatTransport({
         api: "/api/chat",
-        body: { session_id: sessionId },
+        body: {
+          session_id: sessionId,
+          connection_id: connectionId,
+          legacy_session_ids: legacySessionIds,
+        },
       }),
-    [sessionId],
+    [sessionId, connectionId, legacySessionIds],
   );
 
   const {
@@ -139,7 +167,7 @@ function VocaChatInner({ sessionId }: { sessionId: string }) {
                 </span>
               ) : (
                 <a
-                  href={`/api/xero/connect?session_id=${sessionId}`}
+                  href={`/api/xero/connect?connection_id=${connectionId}`}
                   className="inline-flex items-center gap-1 rounded-full border border-[#13b5ea]/40 bg-[#13b5ea]/10 px-3 py-1 text-xs font-medium text-[#7dd3fc] hover:bg-[#13b5ea]/20 transition-colors"
                 >
                   <Link2 className="size-3" />
@@ -324,8 +352,9 @@ function VocaChatInner({ sessionId }: { sessionId: string }) {
 
 export function VocaChat() {
   const sessionId = useSessionId();
+  const connectionId = useConnectionId();
 
-  if (!sessionId) {
+  if (!sessionId || !connectionId) {
     return (
       <div className="flex flex-1 items-center justify-center">
         <div className="flex items-center gap-2 text-sm text-zinc-500">
@@ -336,5 +365,5 @@ export function VocaChat() {
     );
   }
 
-  return <VocaChatInner sessionId={sessionId} />;
+  return <VocaChatInner sessionId={sessionId} connectionId={connectionId} />;
 }
