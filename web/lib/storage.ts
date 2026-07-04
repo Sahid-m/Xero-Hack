@@ -43,7 +43,7 @@ function messagesKey(sessionId: string) {
   return `voca_messages_${sessionId}`;
 }
 
-export function loadMessages(sessionId: string): UIMessage[] {
+function loadMessagesLocal(sessionId: string): UIMessage[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(messagesKey(sessionId));
@@ -53,11 +53,49 @@ export function loadMessages(sessionId: string): UIMessage[] {
   }
 }
 
-export function saveMessages(sessionId: string, messages: UIMessage[]) {
+function saveMessagesLocal(sessionId: string, messages: UIMessage[]) {
   if (typeof window === "undefined") return;
   localStorage.setItem(messagesKey(sessionId), JSON.stringify(messages));
 }
 
-export function clearChat(sessionId: string) {
+/** Load messages from backend (Neon), with localStorage fallback. */
+export async function loadMessages(sessionId: string): Promise<UIMessage[]> {
+  try {
+    const res = await fetch(`/api/messages?session_id=${encodeURIComponent(sessionId)}`);
+    if (res.ok) {
+      const data = (await res.json()) as { messages?: UIMessage[] };
+      const messages = data.messages ?? [];
+      saveMessagesLocal(sessionId, messages);
+      return messages;
+    }
+  } catch {
+    // fall through to local cache
+  }
+  return loadMessagesLocal(sessionId);
+}
+
+/** Save messages to backend and local cache. */
+export async function saveMessages(sessionId: string, messages: UIMessage[]) {
+  saveMessagesLocal(sessionId, messages);
+  try {
+    await fetch("/api/messages", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: sessionId, messages }),
+    });
+  } catch {
+    // local cache still holds messages if backend is down
+  }
+}
+
+/** Clear chat history on backend and locally. */
+export async function clearChat(sessionId: string) {
   localStorage.removeItem(messagesKey(sessionId));
+  try {
+    await fetch(`/api/messages?session_id=${encodeURIComponent(sessionId)}`, {
+      method: "DELETE",
+    });
+  } catch {
+    // ignore
+  }
 }

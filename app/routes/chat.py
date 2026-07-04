@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.agent.voca_agent import MODEL, agent_for_session, system_prompt_for_session
+from app.session import save_chat_messages
 from app.session_context import bind_request_context, reset_request_context
 
 if TYPE_CHECKING:
@@ -47,6 +48,9 @@ async def chat(request: ChatRequest) -> StreamingResponse:
     connection_id = _resolve_connection_id(request, chat_session_id)
     messages, approvals = ai.agents.ui.ai_sdk.to_messages(request.messages)
     ai.agents.ui.ai_sdk.apply_approvals(approvals)
+
+    if chat_session_id:
+        save_chat_messages(chat_session_id, request.messages)
 
     full_messages = [
         ai.system_message(

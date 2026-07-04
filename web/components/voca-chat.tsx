@@ -52,13 +52,14 @@ function useSessionId(): string | null {
 function VocaChatInner({
   sessionId,
   connectionId,
+  initialMessages,
 }: {
   sessionId: string;
   connectionId: string;
+  initialMessages: UIMessage[];
 }) {
   const [input, setInput] = useState("");
   const [xeroConnected, setXeroConnected] = useState(false);
-  const [initialMessages] = useState<UIMessage[]>(() => loadMessages(sessionId));
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const checkXeroStatus = useCallback(async () => {
@@ -112,11 +113,13 @@ function VocaChatInner({
     messages: initialMessages,
     transport,
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
-    onFinish: ({ messages: next }) => saveMessages(sessionId, next),
+    onFinish: ({ messages: next }) => {
+      void saveMessages(sessionId, next);
+    },
   });
 
   useEffect(() => {
-    if (messages.length > 0) saveMessages(sessionId, messages);
+    if (messages.length > 0) void saveMessages(sessionId, messages);
   }, [messages, sessionId]);
 
   useEffect(() => {
@@ -135,7 +138,7 @@ function VocaChatInner({
   };
 
   const handleNewChat = () => {
-    clearChat(sessionId);
+    void clearChat(sessionId);
     setMessages([]);
   };
 
@@ -353,8 +356,20 @@ function VocaChatInner({
 export function VocaChat() {
   const sessionId = useSessionId();
   const connectionId = useConnectionId();
+  const [initialMessages, setInitialMessages] = useState<UIMessage[] | null>(null);
 
-  if (!sessionId || !connectionId) {
+  useEffect(() => {
+    if (!sessionId) return;
+    let cancelled = false;
+    loadMessages(sessionId).then((msgs) => {
+      if (!cancelled) setInitialMessages(msgs);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId]);
+
+  if (!sessionId || !connectionId || initialMessages === null) {
     return (
       <div className="flex flex-1 items-center justify-center">
         <div className="flex items-center gap-2 text-sm text-zinc-500">
@@ -365,5 +380,11 @@ export function VocaChat() {
     );
   }
 
-  return <VocaChatInner sessionId={sessionId} connectionId={connectionId} />;
+  return (
+    <VocaChatInner
+      sessionId={sessionId}
+      connectionId={connectionId}
+      initialMessages={initialMessages}
+    />
+  );
 }

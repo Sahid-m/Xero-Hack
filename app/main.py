@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from app.db import db_enabled, init_db
 from app.routes.chat import register_validation_logger, router as chat_router
+from app.routes.messages import router as messages_router
 from app.routes.xero_auth import router as xero_auth_router
 
 settings = get_settings()
@@ -24,6 +25,7 @@ app.add_middleware(
 
 register_validation_logger(app)
 app.include_router(chat_router)
+app.include_router(messages_router)
 app.include_router(xero_auth_router)
 
 

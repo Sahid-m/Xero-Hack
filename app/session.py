@@ -55,3 +55,29 @@ def session_mode(session_id: str | None) -> SessionMode:
     if not session_id:
         return "setup"
     return get_session(session_id).get("mode", "setup")
+
+
+def save_chat_messages(session_id: str, messages: list[Any]) -> None:
+    """Persist UI messages for a chat session."""
+    serialized: list[Any] = []
+    for message in messages:
+        if hasattr(message, "model_dump"):
+            serialized.append(message.model_dump())
+        elif isinstance(message, dict):
+            serialized.append(message)
+        else:
+            serialized.append(message)
+
+    session = get_session(session_id)
+    session["messages"] = serialized
+    save_session(session_id, session)
+
+
+def load_chat_messages(session_id: str) -> list[Any]:
+    return get_session(session_id).get("messages", [])
+
+
+def clear_chat_messages(session_id: str) -> None:
+    session = get_session(session_id)
+    session["messages"] = []
+    save_session(session_id, session)

@@ -1,6 +1,5 @@
 import { NextRequest } from "next/server";
-
-const BACKEND_URL = process.env.BACKEND_URL ?? "http://localhost:8000";
+import { backendFetch } from "@/lib/backend";
 
 export async function GET(req: NextRequest) {
   const connectionId =
@@ -10,8 +9,16 @@ export async function GET(req: NextRequest) {
     return Response.json({ error: "connection_id required" }, { status: 400 });
   }
 
-  return Response.redirect(
-    `${BACKEND_URL}/auth/xero?connection_id=${encodeURIComponent(connectionId)}`,
-    302,
+  const res = await backendFetch(
+    `/auth/xero?connection_id=${encodeURIComponent(connectionId)}`,
+    { redirect: "manual" },
   );
+
+  const location = res.headers.get("location");
+  if (location) {
+    return Response.redirect(location, 302);
+  }
+
+  const detail = await res.text();
+  return new Response(detail || "Failed to start Xero OAuth", { status: res.status });
 }
