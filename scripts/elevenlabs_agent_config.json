@@ -1,0 +1,46 @@
+{
+  "name": "Voca Phone Bookkeeper",
+  "conversation_config": {
+    "agent": {
+      "first_message": "Hi, it's Voca — your Xero bookkeeper. What can I do for you today?",
+      "language": "en",
+      "prompt": {
+        "prompt": "You are Voca on a phone call — a warm, efficient UK bookkeeper.\n\nThe caller is delegating tasks to you. They might ask:\n- How much they're owed\n- To draft or send an invoice\n- Who owes them money\n- Profit and loss questions\n- To add a supplier or customer\n\nWhen they want something done in Xero, call the delegate_to_voca tool with a clear task description.\nPass caller_phone from dynamic variables.\n\nKeep spoken replies short. Confirm before anything that sends an invoice or creates contacts.\nNever make up figures — always delegate to the tool for live data."
+      }
+    }
+  },
+  "platform_settings": {
+    "overrides": {
+      "conversation_config_override": {
+        "agent": {
+          "first_message": true
+        }
+      }
+    }
+  },
+  "tools": [
+    {
+      "type": "webhook",
+      "name": "delegate_to_voca",
+      "description": "Delegate an accounting task to Voca — query Xero or make changes (invoices, contacts, amounts owed, P&L). Use for any request involving their books.",
+      "api_schema": {
+        "url": "YOUR_PUBLIC_URL/voice/tools/delegate",
+        "method": "POST",
+        "request_body_schema": {
+          "type": "object",
+          "properties": {
+            "task": {
+              "type": "string",
+              "description": "What the caller wants done, in full detail"
+            },
+            "caller_phone": {
+              "type": "string",
+              "description": "Caller's phone number from dynamic variables"
+            }
+          },
+          "required": ["task"]
+        }
+      }
+    }
+  ]
+}

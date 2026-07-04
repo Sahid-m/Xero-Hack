@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     ai_default_model: str = "anthropic:claude-sonnet-4-6"
 
     elevenlabs_api_key: str = ""
+    elevenlabs_agent_id: str = ""
+    voca_phone_number: str = ""
+    public_base_url: str = ""
+
     database_url: str = ""
 
     @property
@@ -28,6 +32,10 @@ class Settings(BaseSettings):
     @property
     def ai_configured(self) -> bool:
         return bool(self.anthropic_api_key)
+
+    @property
+    def voice_configured(self) -> bool:
+        return bool(self.elevenlabs_api_key and self.voca_phone_number)
 
 
 @lru_cache

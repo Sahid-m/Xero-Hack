@@ -20,6 +20,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentActivity } from "./agent-activity";
 import { MessageContent } from "./message-content";
 import { ToolCallCard } from "./tool-call-card";
+import { VocaPhone } from "./voca-phone";
 import {
   clearChat,
   getLegacySessionIds,
@@ -350,11 +351,18 @@ function VocaChatInner({
       </div>
 
       <div className="hidden w-72 shrink-0 border-l border-white/[0.06] bg-[#08080a]/50 xl:block xl:w-80">
-        <AgentActivity
-          messages={messages}
-          onApprove={(id) => addToolApprovalResponse({ id, approved: true })}
-          onReject={(id) => addToolApprovalResponse({ id, approved: false })}
-        />
+        <div className="flex h-full flex-col">
+          <div className="shrink-0 border-b border-white/[0.06] p-4">
+            <VocaPhone connectionId={connectionId} xeroConnected={xeroConnected} />
+          </div>
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <AgentActivity
+              messages={messages}
+              onApprove={(id) => addToolApprovalResponse({ id, approved: true })}
+              onReject={(id) => addToolApprovalResponse({ id, approved: false })}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );
