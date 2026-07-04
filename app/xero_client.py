@@ -4,12 +4,13 @@ import json
 import time
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urlencode, urlparse
 
+import httpx
 from xero_python.accounting import AccountingApi
 from xero_python.api_client import ApiClient
 from xero_python.api_client.configuration import Configuration
 from xero_python.api_client.oauth2 import OAuth2Token
-from xero_python.identity import IdentityApi
 
 from app.config import Settings, get_settings
 from app.db import (
@@ -21,6 +22,10 @@ from app.db import (
 TOKEN_DIR = Path("data/xero")
 TOKEN_DIR.mkdir(parents=True, exist_ok=True)
 
+AUTHORIZE_URL = "https://login.xero.com/identity/connect/authorize"
+TOKEN_URL = "https://identity.xero.com/connect/token"
+CONNECTIONS_URL = "https://api.xero.com/connections"
+
 SCOPES = [
     "openid",
     "profile",
@@ -31,6 +36,13 @@ SCOPES = [
     "accounting.transactions",
     "accounting.reports.read",
 ]
+
+
+def _normalize_token(raw: dict[str, Any]) -> dict[str, Any]:
+    token = dict(raw)
+    if token.get("expires_in") and not token.get("expires_at"):
+        token["expires_at"] = time.time() + float(token["expires_in"])
+    return token
 
 
 def _token_path(session_id: str) -> Path:
@@ -71,31 +83,65 @@ def is_connected(session_id: str) -> bool:
     return bool(stored and stored.get("access_token") and stored.get("tenant_id"))
 
 
-def _get_api_client(settings: Settings | None = None) -> ApiClient:
-    settings = settings or get_settings()
-    if not settings.xero_client_id or not settings.xero_client_secret:
-        raise RuntimeError(
-            "Missing XERO_CLIENT_ID or XERO_CLIENT_SECRET. Copy .env.example to .env."
-        )
-    return ApiClient(
-        Configuration(
-            oauth2_token=OAuth2Token(
-                client_id=settings.xero_client_id,
-                client_secret=settings.xero_client_secret,
-            ),
-        ),
-        pool_threads=1,
-    )
-
-
 def authorization_url(session_id: str, settings: Settings | None = None) -> str:
     settings = settings or get_settings()
-    api_client = _get_api_client(settings)
-    return api_client.get_authorization_url(
-        redirect_uri=settings.xero_redirect_uri,
-        scope=SCOPES,
-        state=session_id,
+    params = {
+        "response_type": "code",
+        "client_id": settings.xero_client_id,
+        "redirect_uri": settings.xero_redirect_uri,
+        "scope": " ".join(SCOPES),
+        "state": session_id,
+    }
+    return f"{AUTHORIZE_URL}?{urlencode(params)}"
+
+
+def _exchange_code_for_token(code: str, settings: Settings) -> dict[str, Any]:
+    response = httpx.post(
+        TOKEN_URL,
+        data={
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": settings.xero_redirect_uri,
+        },
+        auth=(settings.xero_client_id, settings.xero_client_secret),
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        timeout=30.0,
     )
+    if response.status_code != 200:
+        raise RuntimeError(f"Xero token exchange failed: {response.text}")
+    return _normalize_token(response.json())
+
+
+def _refresh_access_token(token: dict[str, Any], settings: Settings) -> dict[str, Any]:
+    response = httpx.post(
+        TOKEN_URL,
+        data={
+            "grant_type": "refresh_token",
+            "refresh_token": token["refresh_token"],
+        },
+        auth=(settings.xero_client_id, settings.xero_client_secret),
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        timeout=30.0,
+    )
+    if response.status_code != 200:
+        raise RuntimeError(f"Xero token refresh failed: {response.text}")
+    refreshed = _normalize_token(response.json())
+    return {**token, **refreshed}
+
+
+def _resolve_tenant_id(access_token: str) -> str:
+    response = httpx.get(
+        CONNECTIONS_URL,
+        headers={"Authorization": f"Bearer {access_token}"},
+        timeout=30.0,
+    )
+    if response.status_code != 200:
+        raise RuntimeError(f"Failed to fetch Xero connections: {response.text}")
+    connections = response.json()
+    for connection in connections:
+        if connection.get("tenantType") == "ORGANISATION":
+            return connection["tenantId"]
+    raise RuntimeError("No Xero organisation found after OAuth.")
 
 
 def exchange_oauth_code(
@@ -104,23 +150,13 @@ def exchange_oauth_code(
     settings: Settings | None = None,
 ) -> dict[str, Any]:
     settings = settings or get_settings()
-    api_client = _get_api_client(settings)
+    query = parse_qs(urlparse(callback_url).query)
+    code_list = query.get("code")
+    if not code_list:
+        raise RuntimeError("OAuth callback missing code parameter.")
 
-    token = api_client.get_access_token(callback_url)
-    if not token or not token.get("access_token"):
-        raise RuntimeError("OAuth token exchange failed.")
-
-    api_client.set_oauth2_token(token)
-    identity = IdentityApi(api_client)
-    tenant_id = None
-    for connection in identity.get_connections():
-        if connection.tenant_type == "ORGANISATION":
-            tenant_id = connection.tenant_id
-            break
-
-    if not tenant_id:
-        raise RuntimeError("No Xero organisation found after OAuth.")
-
+    token = _exchange_code_for_token(code_list[0], settings)
+    tenant_id = _resolve_tenant_id(token["access_token"])
     tokens = {**token, "tenant_id": tenant_id}
     save_tokens(session_id, tokens)
     return tokens
@@ -134,16 +170,41 @@ def ensure_token(session_id: str, settings: Settings | None = None) -> dict[str,
             f"Xero not connected for this session. Connect at /auth/xero?session_id={session_id}"
         )
 
-    api_client = _get_api_client(settings)
-    api_client.set_oauth2_token(token)
-
     expires_at = token.get("expires_at")
     if expires_at and expires_at <= time.time() + 60:
-        refreshed = api_client.refresh_oauth2_token()
-        token = {**token, **refreshed}
+        if not token.get("refresh_token"):
+            raise RuntimeError("Xero token expired and no refresh token available.")
+        token = _refresh_access_token(token, settings)
         save_tokens(session_id, token)
 
     return token
+
+
+def _api_client_for_session(session_id: str, settings: Settings) -> ApiClient:
+    api_client = ApiClient(
+        Configuration(
+            oauth2_token=OAuth2Token(
+                client_id=settings.xero_client_id,
+                client_secret=settings.xero_client_secret,
+            ),
+        ),
+        pool_threads=1,
+    )
+
+    @api_client.oauth2_token_getter
+    def obtain_token() -> dict[str, Any] | None:
+        return load_tokens(session_id)
+
+    @api_client.oauth2_token_saver
+    def store_token(token: dict[str, Any]) -> None:
+        existing = load_tokens(session_id) or {}
+        save_tokens(session_id, {**existing, **token})
+
+    stored = load_tokens(session_id)
+    if stored:
+        api_client.set_oauth2_token(stored)
+
+    return api_client
 
 
 def get_accounting_api(
@@ -152,11 +213,9 @@ def get_accounting_api(
 ) -> tuple[AccountingApi, str]:
     settings = settings or get_settings()
     token = ensure_token(session_id, settings)
-    stored = load_tokens(session_id) or token
-    tenant_id = stored.get("tenant_id")
+    tenant_id = token.get("tenant_id")
     if not tenant_id:
         raise RuntimeError("Missing tenant_id — reconnect Xero.")
 
-    api_client = _get_api_client(settings)
-    api_client.set_oauth2_token(stored)
+    api_client = _api_client_for_session(session_id, settings)
     return AccountingApi(api_client), tenant_id
