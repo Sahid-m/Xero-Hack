@@ -23,6 +23,8 @@ def main() -> None:
     print("Voca Phone Agent — ElevenLabs + Twilio Setup")
     print("=" * 60)
     print()
+    print("Full step-by-step guide: docs/VOICE_SETUP.md")
+    print()
     print("1. Twilio: buy or use a phone number")
     print("2. ElevenLabs → Agents → Create agent (or import config below)")
     print("3. ElevenLabs → Phone Numbers → Import Twilio number")

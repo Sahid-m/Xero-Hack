@@ -41,6 +41,11 @@ class ElevenLabsToolRequest(BaseModel):
 
     tool_call_id: str | None = None
     tool_name: str | None = None
+    # Flat form (optional): { "instruction": "...", "caller_phone": "..." }
+    instruction: str | None = None
+    task: str | None = None
+    caller_phone: str | None = None
+    connection_id: str | None = None
     parameters: dict[str, Any] = Field(default_factory=dict)
     conversation_id: str | None = None
 
@@ -57,7 +62,14 @@ def voice_status() -> dict:
             "delegate": f"{settings.public_base_url}/voice/tools/delegate"
             if settings.public_base_url
             else "/voice/tools/delegate",
+            "instruct": f"{settings.public_base_url}/voice/instruct"
+            if settings.public_base_url
+            else "/voice/instruct",
         },
+        "architecture": (
+            "ElevenLabs handles voice; ONE tool (delegate_to_voca) sends each instruction "
+            "to the full Voca Xero agent. See docs/VOICE_SETUP.md"
+        ),
     }
 
 
@@ -127,18 +139,37 @@ async def voice_conversation_init(body: TwilioInitRequest) -> dict:
 
 
 @router.post("/voice/tools/delegate")
+@router.post("/voice/instruct")
 async def voice_tool_delegate(body: ElevenLabsToolRequest) -> dict:
     """
-    ElevenLabs server tool — delegate an accounting task to the full Voca agent.
-    Configure in ElevenLabs as webhook tool `delegate_to_voca`.
+    ElevenLabs server tool — pass the caller's instruction; Voca runs the full agent.
+
+    Configure ONE webhook tool in ElevenLabs named `delegate_to_voca`.
+    ElevenLabs handles voice; this endpoint handles all Xero logic.
     """
     params = body.parameters
-    task = str(params.get("task") or params.get("request") or "").strip()
+    task = str(
+        body.instruction
+        or body.task
+        or params.get("task")
+        or params.get("instruction")
+        or params.get("request")
+        or ""
+    ).strip()
     if not task:
         return {"result": "I didn't catch the task. What should I do in Xero?"}
 
-    caller = normalize_phone(str(params.get("caller_phone") or params.get("phone") or ""))
-    connection_id = str(params.get("connection_id") or "").strip() or None
+    caller = normalize_phone(
+        str(
+            body.caller_phone
+            or params.get("caller_phone")
+            or params.get("phone")
+            or ""
+        )
+    )
+    connection_id = (
+        str(body.connection_id or params.get("connection_id") or "").strip() or None
+    )
     if not connection_id and caller:
         connection_id = connection_for_phone(caller)
 

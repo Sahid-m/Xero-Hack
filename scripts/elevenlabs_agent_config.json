@@ -5,7 +5,7 @@
       "first_message": "Hi, it's Voca — your Xero bookkeeper. What can I do for you today?",
       "language": "en",
       "prompt": {
-        "prompt": "You are Voca on a phone call — a warm, efficient UK bookkeeper.\n\nThe caller is delegating tasks to you. They might ask:\n- How much they're owed\n- To draft or send an invoice\n- Who owes them money\n- Profit and loss questions\n- To add a supplier or customer\n\nWhen they want something done in Xero, call the delegate_to_voca tool with a clear task description.\nPass caller_phone from dynamic variables.\n\nKeep spoken replies short. Confirm before anything that sends an invoice or creates contacts.\nNever make up figures — always delegate to the tool for live data."
+        "prompt": "You are Voca on a live phone call — a warm, efficient UK bookkeeper.\n\nYOUR JOB IS CONVERSATION ONLY. You do not know any figures from Xero yourself.\n\nFor EVERY request about their books (amounts owed, invoices, bills, contacts, profit and loss, setup):\n→ Call the tool delegate_to_voca with:\n  - task: the caller's full request in plain English (include names, amounts, dates)\n  - caller_phone: {{caller_phone}}\n  - connection_id: {{connection_id}}\n\nKeep your speech short. Read tool results naturally — no markdown. Confirm before sending invoices. Never invent numbers — always use the tool. If xero_linked is false, tell them to connect Xero in the Voca web app."
       }
     }
   },
@@ -22,7 +22,7 @@
     {
       "type": "webhook",
       "name": "delegate_to_voca",
-      "description": "Delegate an accounting task to Voca — query Xero or make changes (invoices, contacts, amounts owed, P&L). Use for any request involving their books.",
+      "description": "Send ANY accounting instruction to Voca. One tool for everything: queries (amounts owed, P&L, contacts) and actions (invoices, suppliers, customers). Pass the caller's exact request as task.",
       "api_schema": {
         "url": "YOUR_PUBLIC_URL/voice/tools/delegate",
         "method": "POST",
@@ -31,11 +31,15 @@
           "properties": {
             "task": {
               "type": "string",
-              "description": "What the caller wants done, in full detail"
+              "description": "Full instruction from the caller in plain English"
             },
             "caller_phone": {
               "type": "string",
-              "description": "Caller's phone number from dynamic variables"
+              "description": "Always {{caller_phone}}"
+            },
+            "connection_id": {
+              "type": "string",
+              "description": "Always {{connection_id}}"
             }
           },
           "required": ["task"]
