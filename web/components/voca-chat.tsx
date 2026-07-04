@@ -5,32 +5,46 @@ import {
   DefaultChatTransport,
   lastAssistantMessageIsCompleteWithApprovalResponses,
   type ToolUIPart,
+  type UIMessage,
 } from "ai";
-import { Link2, Mic, Send, Square } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  CheckCircle2,
+  Link2,
+  Mic,
+  RotateCcw,
+  Send,
+  Sparkles,
+  Square,
+  User,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentActivity } from "./agent-activity";
+import { MessageContent } from "./message-content";
 import { ToolCallCard } from "./tool-call-card";
+import {
+  clearChat,
+  getOrCreateSessionId,
+  loadMessages,
+  saveMessages,
+} from "@/lib/storage";
 
-const SESSION_KEY = "voca_session_id";
+const STARTERS = [
+  "I run a café in Bristol — help me get set up on Xero.",
+  "What can you access from my Xero account?",
+  "Bill the Hendersons — two hours labour plus £40 parts.",
+];
 
 function useSessionId(): string | null {
   const [sessionId, setSessionId] = useState<string | null>(null);
-
-  useEffect(() => {
-    let id = sessionStorage.getItem(SESSION_KEY);
-    if (!id) {
-      id = crypto.randomUUID();
-      sessionStorage.setItem(SESSION_KEY, id);
-    }
-    setSessionId(id);
-  }, []);
-
+  useEffect(() => setSessionId(getOrCreateSessionId()), []);
   return sessionId;
 }
 
 function VocaChatInner({ sessionId }: { sessionId: string }) {
   const [input, setInput] = useState("");
   const [xeroConnected, setXeroConnected] = useState(false);
+  const [initialMessages] = useState<UIMessage[]>(() => loadMessages(sessionId));
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const checkXeroStatus = useCallback(async () => {
     const res = await fetch(`/api/xero/status?session_id=${sessionId}`);
@@ -42,7 +56,6 @@ function VocaChatInner({ sessionId }: { sessionId: string }) {
     checkXeroStatus();
     const params = new URLSearchParams(window.location.search);
     if (params.get("xero") === "connected") {
-      setXeroConnected(true);
       window.history.replaceState({}, "", "/");
       checkXeroStatus();
     }
@@ -60,14 +73,26 @@ function VocaChatInner({ sessionId }: { sessionId: string }) {
   const {
     messages,
     sendMessage,
+    setMessages,
     addToolApprovalResponse,
     status,
     error,
     stop,
   } = useChat({
+    id: sessionId,
+    messages: initialMessages,
     transport,
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
+    onFinish: ({ messages: next }) => saveMessages(sessionId, next),
   });
+
+  useEffect(() => {
+    if (messages.length > 0) saveMessages(sessionId, messages);
+  }, [messages, sessionId]);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages, status]);
 
   const isLoading = status === "submitted" || status === "streaming";
   const sessionShort = sessionId.slice(0, 8);
@@ -80,151 +105,195 @@ function VocaChatInner({ sessionId }: { sessionId: string }) {
     setInput("");
   };
 
-  const handleApprove = (id: string) => {
-    addToolApprovalResponse({ id, approved: true });
-  };
-
-  const handleReject = (id: string) => {
-    addToolApprovalResponse({ id, approved: false });
+  const handleNewChat = () => {
+    clearChat(sessionId);
+    setMessages([]);
   };
 
   return (
     <div className="flex h-full min-h-0 flex-1">
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="shrink-0 border-b border-white/10 px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className="flex size-9 items-center justify-center rounded-full bg-teal-500/20 ring-1 ring-teal-500/40">
-              <Mic className="size-4 text-teal-400" />
+        <header className="shrink-0 border-b border-white/[0.06] bg-[#0a0a0c]/80 backdrop-blur-md px-4 py-3 sm:px-6">
+          <div className="mx-auto flex max-w-3xl items-center gap-3">
+            <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-[#13b5ea]/30 to-[#0d9488]/20 ring-1 ring-[#13b5ea]/30 shadow-lg shadow-[#13b5ea]/5">
+              <Mic className="size-5 text-[#5eead4]" />
             </div>
-            <div>
-              <h1 className="text-lg font-semibold tracking-tight text-zinc-50">
-                Voca
-              </h1>
-              <p className="text-xs text-zinc-500">
-                Xero without ever opening Xero · session{" "}
-                <span className="font-mono text-zinc-600">{sessionShort}</span>
+            <div className="min-w-0 flex-1">
+              <h1 className="text-base font-semibold tracking-tight text-white">Voca</h1>
+              <p className="truncate text-xs text-zinc-500">
+                Xero without ever opening Xero
               </p>
             </div>
-            <div className="ml-auto flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span
+                className="hidden sm:inline rounded-md bg-zinc-900 px-2 py-1 font-mono text-[10px] text-zinc-500 ring-1 ring-white/5"
+                title={sessionId}
+              >
+                {sessionShort}
+              </span>
               {xeroConnected ? (
-                <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-400">
-                  Xero connected
+                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-400">
+                  <CheckCircle2 className="size-3" />
+                  Xero
                 </span>
               ) : (
                 <a
                   href={`/api/xero/connect?session_id=${sessionId}`}
-                  className="flex items-center gap-1.5 rounded-full border border-teal-500/40 bg-teal-500/10 px-3 py-1.5 text-xs font-medium text-teal-300 hover:bg-teal-500/20"
+                  className="inline-flex items-center gap-1 rounded-full border border-[#13b5ea]/40 bg-[#13b5ea]/10 px-3 py-1 text-xs font-medium text-[#7dd3fc] hover:bg-[#13b5ea]/20 transition-colors"
                 >
-                  <Link2 className="size-3.5" />
-                  Connect Xero
+                  <Link2 className="size-3" />
+                  Connect
                 </a>
               )}
-              <span
-                className={`size-2 rounded-full ${isLoading ? "bg-teal-400 animate-pulse" : "bg-zinc-600"}`}
-              />
-              <span className="text-xs text-zinc-500 capitalize">{status}</span>
+              {messages.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleNewChat}
+                  className="rounded-lg p-2 text-zinc-500 hover:bg-white/5 hover:text-zinc-300"
+                  title="New chat"
+                >
+                  <RotateCcw className="size-4" />
+                </button>
+              )}
             </div>
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-6 sm:px-6">
           {messages.length === 0 ? (
-            <div className="mx-auto max-w-xl text-center pt-16">
+            <div className="mx-auto flex max-w-lg flex-col items-center pt-12 text-center">
+              <div className="mb-6 flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br from-[#13b5ea]/20 to-transparent ring-1 ring-[#13b5ea]/20">
+                <Sparkles className="size-7 text-[#13b5ea]" />
+              </div>
+              <h2 className="text-xl font-semibold text-zinc-100">
+                Set up Xero in 90 seconds
+              </h2>
+              <p className="mt-2 text-sm leading-relaxed text-zinc-500">
+                Tell Voca about your business. It configures contacts, VAT, and invoices
+                while you talk — no spreadsheets, no chart-of-accounts lecture.
+              </p>
               {!xeroConnected && (
-                <p className="text-amber-400/90 text-sm mb-4">
-                  Connect Xero first so Voca can configure your books.
+                <p className="mt-4 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-200/90">
+                  Connect Xero first so Voca can write to your books.
                 </p>
               )}
-              <p className="text-zinc-400 text-sm leading-relaxed">
-                Try:{" "}
-                <button
-                  type="button"
-                  className="text-teal-400 hover:underline"
-                  onClick={() =>
-                    sendMessage({
-                      text: "I run a café in Bristol. Help me get set up on Xero.",
-                    })
-                  }
-                >
-                  &ldquo;I run a café in Bristol…&rdquo;
-                </button>
-              </p>
+              <div className="mt-8 flex w-full flex-col gap-2">
+                {STARTERS.map((prompt) => (
+                  <button
+                    key={prompt}
+                    type="button"
+                    onClick={() => sendMessage({ text: prompt })}
+                    className="rounded-xl border border-white/[0.06] bg-zinc-900/50 px-4 py-3 text-left text-sm text-zinc-400 transition-colors hover:border-[#13b5ea]/30 hover:bg-zinc-900 hover:text-zinc-200"
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
             </div>
           ) : (
             <div className="mx-auto max-w-2xl space-y-6">
-              {messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`flex flex-col gap-2 ${message.role === "user" ? "items-end" : "items-start"}`}
-                >
-                  <span className="text-[10px] uppercase tracking-wider text-zinc-600 px-1">
-                    {message.role}
-                  </span>
+              {messages.map((message) => {
+                const isUser = message.role === "user";
+                return (
                   <div
-                    className={`space-y-2 max-w-full ${
-                      message.role === "user" ? "items-end" : "items-start"
-                    }`}
+                    key={message.id}
+                    className={`flex gap-3 ${isUser ? "flex-row-reverse" : "flex-row"}`}
                   >
-                    {message.parts.map((part, i) => {
-                      if (part.type === "text") {
-                        return (
-                          <div
-                            key={`${message.id}-${i}`}
-                            className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
-                              message.role === "user"
-                                ? "bg-teal-600/20 text-teal-50 border border-teal-500/20"
-                                : "bg-zinc-900 text-zinc-200 border border-white/10"
-                            }`}
-                          >
-                            {part.text}
-                          </div>
-                        );
-                      }
-
-                      if (part.type.startsWith("tool-")) {
-                        return (
-                          <div key={`${message.id}-${i}`} className="w-full max-w-md">
-                            <ToolCallCard
-                              part={part as ToolUIPart}
-                              onApprove={handleApprove}
-                              onReject={handleReject}
-                            />
-                          </div>
-                        );
-                      }
-
-                      return null;
-                    })}
+                    <div
+                      className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${
+                        isUser
+                          ? "bg-teal-600/20 text-teal-300"
+                          : "bg-[#13b5ea]/15 text-[#13b5ea]"
+                      }`}
+                    >
+                      {isUser ? <User className="size-4" /> : <Mic className="size-4" />}
+                    </div>
+                    <div
+                      className={`min-w-0 flex-1 space-y-2 ${isUser ? "items-end" : "items-start"}`}
+                    >
+                      {message.parts.map((part, i) => {
+                        if (part.type === "text" && part.text.trim()) {
+                          return (
+                            <div
+                              key={`${message.id}-${i}`}
+                              className={`rounded-2xl px-4 py-3 text-sm ${
+                                isUser
+                                  ? "ml-auto max-w-[85%] bg-teal-600/15 text-teal-50 ring-1 ring-teal-500/20"
+                                  : "bg-zinc-900/80 text-zinc-300 ring-1 ring-white/[0.06]"
+                              }`}
+                            >
+                              {isUser ? (
+                                part.text
+                              ) : (
+                                <MessageContent text={part.text} />
+                              )}
+                            </div>
+                          );
+                        }
+                        if (part.type.startsWith("tool-")) {
+                          return (
+                            <div key={`${message.id}-${i}`} className="max-w-md">
+                              <ToolCallCard
+                                part={part as ToolUIPart}
+                                onApprove={(id) =>
+                                  addToolApprovalResponse({ id, approved: true })
+                                }
+                                onReject={(id) =>
+                                  addToolApprovalResponse({ id, approved: false })
+                                }
+                              />
+                            </div>
+                          );
+                        }
+                        return null;
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+              {isLoading && (
+                <div className="flex gap-3">
+                  <div className="flex size-8 items-center justify-center rounded-lg bg-[#13b5ea]/15">
+                    <Mic className="size-4 text-[#13b5ea] animate-pulse" />
+                  </div>
+                  <div className="flex items-center gap-1 rounded-2xl bg-zinc-900/80 px-4 py-3 ring-1 ring-white/[0.06]">
+                    <span className="size-1.5 animate-bounce rounded-full bg-zinc-500 [animation-delay:0ms]" />
+                    <span className="size-1.5 animate-bounce rounded-full bg-zinc-500 [animation-delay:150ms]" />
+                    <span className="size-1.5 animate-bounce rounded-full bg-zinc-500 [animation-delay:300ms]" />
                   </div>
                 </div>
-              ))}
+              )}
             </div>
           )}
         </div>
 
         {error && (
-          <div className="mx-4 mb-2 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-300">
+          <div className="mx-auto mb-2 max-w-2xl rounded-xl border border-red-500/25 bg-red-500/10 px-4 py-2.5 text-sm text-red-300">
             {error.message}
           </div>
         )}
 
         <form
           onSubmit={handleSubmit}
-          className="shrink-0 border-t border-white/10 p-4 sm:px-6"
+          className="shrink-0 border-t border-white/[0.06] bg-[#0a0a0c]/90 p-4 backdrop-blur-md sm:px-6"
         >
           <div className="mx-auto flex max-w-2xl gap-2">
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Tell Voca about your business…"
+              placeholder={
+                xeroConnected
+                  ? "Tell Voca what to do…"
+                  : "Connect Xero to get started…"
+              }
               disabled={isLoading}
-              className="flex-1 rounded-xl border border-white/10 bg-zinc-900 px-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-teal-500/50 focus:outline-none focus:ring-1 focus:ring-teal-500/30 disabled:opacity-50"
+              className="flex-1 rounded-xl border border-white/[0.08] bg-zinc-900/80 px-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-[#13b5ea]/40 focus:outline-none focus:ring-2 focus:ring-[#13b5ea]/20 disabled:opacity-50"
             />
             {isLoading ? (
               <button
                 type="button"
                 onClick={stop}
-                className="flex items-center justify-center rounded-xl border border-white/10 bg-zinc-800 px-4 text-zinc-300 hover:bg-zinc-700"
+                className="flex size-11 items-center justify-center rounded-xl border border-white/10 bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
               >
                 <Square className="size-4" />
               </button>
@@ -232,7 +301,7 @@ function VocaChatInner({ sessionId }: { sessionId: string }) {
               <button
                 type="submit"
                 disabled={!input.trim()}
-                className="flex items-center justify-center rounded-xl bg-teal-600 px-4 text-white hover:bg-teal-500 disabled:opacity-40 disabled:hover:bg-teal-600"
+                className="flex size-11 items-center justify-center rounded-xl bg-gradient-to-br from-[#13b5ea] to-[#0d9488] text-white shadow-lg shadow-[#13b5ea]/20 hover:opacity-90 disabled:opacity-40"
               >
                 <Send className="size-4" />
               </button>
@@ -241,11 +310,11 @@ function VocaChatInner({ sessionId }: { sessionId: string }) {
         </form>
       </div>
 
-      <div className="hidden w-80 lg:block shrink-0">
+      <div className="hidden w-72 shrink-0 border-l border-white/[0.06] bg-[#08080a]/50 xl:block xl:w-80">
         <AgentActivity
           messages={messages}
-          onApprove={handleApprove}
-          onReject={handleReject}
+          onApprove={(id) => addToolApprovalResponse({ id, approved: true })}
+          onReject={(id) => addToolApprovalResponse({ id, approved: false })}
         />
       </div>
     </div>
@@ -257,8 +326,11 @@ export function VocaChat() {
 
   if (!sessionId) {
     return (
-      <div className="flex flex-1 items-center justify-center text-sm text-zinc-500">
-        Loading session…
+      <div className="flex flex-1 items-center justify-center">
+        <div className="flex items-center gap-2 text-sm text-zinc-500">
+          <span className="size-2 animate-pulse rounded-full bg-[#13b5ea]" />
+          Loading session…
+        </div>
       </div>
     );
   }

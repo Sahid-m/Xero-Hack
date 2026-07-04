@@ -1,9 +1,10 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0c0c0e;
+  --background: #070708;
   --foreground: #ededed;
   --voca-teal: #13b5ea;
+  --voca-surface: #111113;
 }
 
 @theme inline {
@@ -16,4 +17,12 @@
 body {
   background: var(--background);
   color: var(--foreground);
+}
+
+/* Subtle ambient background */
+.voca-bg {
+  background-color: #070708;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(19, 181, 234, 0.12), transparent),
+    radial-gradient(ellipse 60% 40% at 100% 100%, rgba(13, 148, 136, 0.08), transparent);
 }

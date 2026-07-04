@@ -26,18 +26,18 @@ export function AgentActivity({ messages, onApprove, onReject }: AgentActivityPr
   }
 
   return (
-    <aside className="flex h-full flex-col border-l border-white/10 bg-zinc-950/50">
-      <div className="flex items-center gap-2 border-b border-white/10 px-4 py-3">
-        <Activity className="size-4 text-teal-400" />
-        <h2 className="text-sm font-semibold text-zinc-200">Agent activity</h2>
-        <span className="ml-auto rounded-full bg-white/10 px-2 py-0.5 text-xs text-zinc-400">
+    <aside className="flex h-full flex-col">
+      <div className="flex items-center gap-2 border-b border-white/[0.06] px-4 py-3">
+        <Activity className="size-4 text-[#13b5ea]" />
+        <h2 className="text-sm font-medium text-zinc-300">Agent activity</h2>
+        <span className="ml-auto rounded-full bg-white/5 px-2 py-0.5 text-[10px] font-medium text-zinc-500">
           {toolParts.length}
         </span>
       </div>
-      <div className="flex-1 overflow-y-auto p-3 space-y-2">
+      <div className="flex-1 space-y-2 overflow-y-auto p-3">
         {toolParts.length === 0 ? (
-          <p className="text-xs text-zinc-500 px-1 py-4 text-center leading-relaxed">
-            Tool calls appear here as Voca configures Xero — contacts, invoices, VAT, and more.
+          <p className="px-1 py-6 text-center text-xs leading-relaxed text-zinc-600">
+            Xero tool calls appear here — contacts, invoices, VAT setup, and more.
           </p>
         ) : (
           toolParts.map(({ key, part }) => (
