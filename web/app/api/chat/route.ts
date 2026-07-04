@@ -8,7 +8,7 @@ export async function POST(req: Request) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       messages: body.messages,
-      session_id: body.session_id ?? body.sessionId,
+      session_id: body.session_id ?? body.sessionId ?? body.id,
     }),
   });
 

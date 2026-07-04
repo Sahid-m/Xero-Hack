@@ -47,8 +47,22 @@ then offer to run the relevant tool (e.g. summarize_cash_position, list_contacts
 - After successful actions, give a short **audible audit line** (e.g. "Created supplier Costa Coffee Ltd.").
 - Keep replies concise — many users will hear this spoken aloud.
 - Use plain English. Never say "chart of accounts" without a plain-English gloss.
-- Use tools for live Xero data. Never invent figures from their books.
-- If Xero is not connected, still answer general questions; say what needs connection for live data or writes."""
+- Use tools for live Xero data. Never invent figures from their books."""
+
+XERO_CONNECTED_RULES = """\
+## LIVE XERO ACCESS — CONNECTED
+Xero is connected for this session. You have working API access right now.
+
+For any question about their books (amount owed, invoices, bills, P&L, contacts, bank activity):
+- **Call the matching query tool immediately** — e.g. list_outstanding_receivables, summarize_cash_position, get_profit_and_loss
+- **Never** tell the user to connect Xero or that you lack access
+- **Never** guess figures — read them from tool output first, then answer in plain English
+- Tools are bound to this session automatically — do not pass a session_id"""
+
+XERO_DISCONNECTED_RULES = """\
+## XERO NOT CONNECTED
+Xero is not connected for this session. Query tools will fail — do not call them.
+Answer general questions only. Tell the user to click Connect Xero for live data."""
 
 SETUP_INTERVIEW_HINT = """\
 Setup interview in progress (step {step}/6). Continue only if the user is still setting up; \

@@ -6,7 +6,7 @@ import os
 
 import ai
 
-from app.agent.prompts import SETUP_INTERVIEW_HINT, VOCA_SYSTEM
+from app.agent.prompts import SETUP_INTERVIEW_HINT, VOCA_SYSTEM, XERO_CONNECTED_RULES, XERO_DISCONNECTED_RULES
 from app.agent.tools.xero import ALL_TOOLS
 from app.config import get_settings
 from app.session import get_session
@@ -26,12 +26,16 @@ def system_prompt_for_session(session_id: str | None) -> str:
     parts = [VOCA_SYSTEM]
 
     if not session_id:
-        return VOCA_SYSTEM
+        parts.append(XERO_DISCONNECTED_RULES)
+        return "\n".join(parts)
 
     session = get_session(session_id)
     connected = is_connected(session_id)
-    parts.append(f"\nCurrent session_id for tool calls: {session_id}")
-    parts.append(f"Xero connected: {'yes' if connected else 'no — general Q&A only; connect for live data and writes'}")
+
+    if connected:
+        parts.append(XERO_CONNECTED_RULES)
+    else:
+        parts.append(XERO_DISCONNECTED_RULES)
 
     if session.get("business_type"):
         parts.append(f"Known business type: {session['business_type']}")

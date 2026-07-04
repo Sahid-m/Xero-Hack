@@ -17,6 +17,7 @@ from app.agent.tools.xero_serialize import (
     slim_payment,
     tool_result,
 )
+from app.session_context import voca_session_id
 from app.xero_client import get_accounting_api
 
 InvoiceType = Literal["ACCREC", "ACCPAY", "all"]
@@ -28,15 +29,19 @@ def _clamp(limit: int, cap: int = 50) -> int:
     return max(1, min(limit, cap))
 
 
+def _api():
+    return get_accounting_api(voca_session_id())
+
+
 # ---------------------------------------------------------------------------
 # Organisation & settings
 # ---------------------------------------------------------------------------
 
 
 @ai.tool
-async def get_organisation_info(session_id: str) -> str:
+async def get_organisation_info() -> str:
     """Get the connected Xero organisation name, legal name, currency, and country."""
-    accounting, tenant_id = get_accounting_api(session_id)
+    accounting, tenant_id = _api()
     result = accounting.get_organisations(tenant_id)
     if not result.organisations:
         return tool_result(error="No organisation found for this connection.")
@@ -55,12 +60,11 @@ async def get_organisation_info(session_id: str) -> str:
 
 @ai.tool
 async def list_accounts(
-    session_id: str,
     search: str = "",
     limit: int = 50,
 ) -> str:
     """List chart of accounts (codes, names, types). Optional search filters by name or code."""
-    accounting, tenant_id = get_accounting_api(session_id)
+    accounting, tenant_id = _api()
     where = None
     if search.strip():
         term = search.strip().replace('"', "")
@@ -71,9 +75,9 @@ async def list_accounts(
 
 
 @ai.tool
-async def list_tax_rates(session_id: str) -> str:
+async def list_tax_rates() -> str:
     """List tax rates configured in Xero (VAT types and percentages)."""
-    accounting, tenant_id = get_accounting_api(session_id)
+    accounting, tenant_id = _api()
     result = accounting.get_tax_rates(tenant_id)
     rates = [
         {
@@ -88,9 +92,9 @@ async def list_tax_rates(session_id: str) -> str:
 
 
 @ai.tool
-async def list_tracking_categories(session_id: str) -> str:
+async def list_tracking_categories() -> str:
     """List tracking categories and their options (departments, projects, etc.)."""
-    accounting, tenant_id = get_accounting_api(session_id)
+    accounting, tenant_id = _api()
     result = accounting.get_tracking_categories(tenant_id)
     categories = [
         {
@@ -108,9 +112,9 @@ async def list_tracking_categories(session_id: str) -> str:
 
 
 @ai.tool
-async def list_branding_themes(session_id: str) -> str:
+async def list_branding_themes() -> str:
     """List invoice branding themes (logo, colours, payment terms)."""
-    accounting, tenant_id = get_accounting_api(session_id)
+    accounting, tenant_id = _api()
     result = accounting.get_branding_themes(tenant_id)
     themes = [
         {
@@ -131,13 +135,12 @@ async def list_branding_themes(session_id: str) -> str:
 
 @ai.tool
 async def list_contacts(
-    session_id: str,
     contact_type: ContactType = "all",
     search: str = "",
     limit: int = 25,
 ) -> str:
     """List contacts. Filter by customer/supplier and optional name search."""
-    accounting, tenant_id = get_accounting_api(session_id)
+    accounting, tenant_id = _api()
     where = None
     if contact_type == "customer":
         where = "IsCustomer==true"
@@ -155,9 +158,9 @@ async def list_contacts(
 
 
 @ai.tool
-async def get_contact_details(session_id: str, contact_id: str) -> str:
+async def get_contact_details(contact_id: str) -> str:
     """Get full details for one contact by Xero contact_id."""
-    accounting, tenant_id = get_accounting_api(session_id)
+    accounting, tenant_id = _api()
     result = accounting.get_contact(tenant_id, contact_id)
     if not result.contacts:
         return tool_result(error=f"No contact found for id {contact_id}.")
@@ -171,14 +174,13 @@ async def get_contact_details(session_id: str, contact_id: str) -> str:
 
 @ai.tool
 async def list_invoices(
-    session_id: str,
     invoice_type: InvoiceType = "all",
     status: InvoiceStatus = "all",
     contact_name: str = "",
     limit: int = 20,
 ) -> str:
     """List sales invoices (ACCREC) or bills (ACCPAY). Filter by status and contact name."""
-    accounting, tenant_id = get_accounting_api(session_id)
+    accounting, tenant_id = _api()
     clauses: list[str] = []
     if invoice_type != "all":
         clauses.append(f'Type=="{invoice_type}"')
@@ -200,9 +202,9 @@ async def list_invoices(
 
 
 @ai.tool
-async def get_invoice_details(session_id: str, invoice_id: str) -> str:
+async def get_invoice_details(invoice_id: str) -> str:
     """Get one invoice or bill by invoice_id, including line items."""
-    accounting, tenant_id = get_accounting_api(session_id)
+    accounting, tenant_id = _api()
     result = accounting.get_invoice(tenant_id, invoice_id)
     if not result.invoices:
         return tool_result(error=f"No invoice found for id {invoice_id}.")
@@ -210,9 +212,9 @@ async def get_invoice_details(session_id: str, invoice_id: str) -> str:
 
 
 @ai.tool
-async def list_outstanding_receivables(session_id: str, limit: int = 30) -> str:
+async def list_outstanding_receivables(limit: int = 30) -> str:
     """List unpaid sales invoices (money customers owe you) with amounts due."""
-    accounting, tenant_id = get_accounting_api(session_id)
+    accounting, tenant_id = _api()
     result = accounting.get_invoices(
         tenant_id,
         where='Type=="ACCREC" && AmountDue>0',
@@ -231,9 +233,9 @@ async def list_outstanding_receivables(session_id: str, limit: int = 30) -> str:
 
 
 @ai.tool
-async def list_outstanding_payables(session_id: str, limit: int = 30) -> str:
+async def list_outstanding_payables(limit: int = 30) -> str:
     """List unpaid bills (money you owe suppliers) with amounts due."""
-    accounting, tenant_id = get_accounting_api(session_id)
+    accounting, tenant_id = _api()
     result = accounting.get_invoices(
         tenant_id,
         where='Type=="ACCPAY" && AmountDue>0',
@@ -258,12 +260,11 @@ async def list_outstanding_payables(session_id: str, limit: int = 30) -> str:
 
 @ai.tool
 async def list_payments(
-    session_id: str,
     limit: int = 25,
     from_date: str = "",
 ) -> str:
     """List recent payments. Optional from_date (YYYY-MM-DD) filters payments on or after that date."""
-    accounting, tenant_id = get_accounting_api(session_id)
+    accounting, tenant_id = _api()
     where = None
     if from_date.strip():
         where = f'Date>=DateTime({from_date.strip()})'
@@ -274,12 +275,11 @@ async def list_payments(
 
 @ai.tool
 async def list_bank_transactions(
-    session_id: str,
     limit: int = 25,
     from_date: str = "",
 ) -> str:
     """List bank account spend/receive transactions. Optional from_date (YYYY-MM-DD)."""
-    accounting, tenant_id = get_accounting_api(session_id)
+    accounting, tenant_id = _api()
     where = None
     if from_date.strip():
         where = f'Date>=DateTime({from_date.strip()})'
@@ -298,9 +298,9 @@ async def list_bank_transactions(
 
 
 @ai.tool
-async def list_items(session_id: str, search: str = "", limit: int = 30) -> str:
+async def list_items(search: str = "", limit: int = 30) -> str:
     """List inventory items / products / services with sales and purchase prices."""
-    accounting, tenant_id = get_accounting_api(session_id)
+    accounting, tenant_id = _api()
     where = None
     if search.strip():
         term = search.strip().replace('"', "")
@@ -312,12 +312,11 @@ async def list_items(session_id: str, search: str = "", limit: int = 30) -> str:
 
 @ai.tool
 async def get_profit_and_loss(
-    session_id: str,
     from_date: str = "",
     to_date: str = "",
 ) -> str:
     """Get profit & loss report. Defaults to current month if dates omitted."""
-    accounting, tenant_id = get_accounting_api(session_id)
+    accounting, tenant_id = _api()
     today = date.today()
     start = from_date.strip() or today.replace(day=1).isoformat()
     end = to_date.strip() or today.isoformat()
@@ -333,12 +332,11 @@ async def get_profit_and_loss(
 
 @ai.tool
 async def get_aged_receivables_for_contact(
-    session_id: str,
     contact_id: str,
     as_of_date: str = "",
 ) -> str:
     """Aged receivables breakdown for one customer contact_id."""
-    accounting, tenant_id = get_accounting_api(session_id)
+    accounting, tenant_id = _api()
     report_date = as_of_date.strip() or date.today().isoformat()
     report = accounting.get_report_aged_receivables_by_contact(
         tenant_id,
@@ -355,12 +353,11 @@ async def get_aged_receivables_for_contact(
 
 @ai.tool
 async def get_aged_payables_for_contact(
-    session_id: str,
     contact_id: str,
     as_of_date: str = "",
 ) -> str:
     """Aged payables breakdown for one supplier contact_id."""
-    accounting, tenant_id = get_accounting_api(session_id)
+    accounting, tenant_id = _api()
     report_date = as_of_date.strip() or date.today().isoformat()
     report = accounting.get_report_aged_payables_by_contact(
         tenant_id,
@@ -376,9 +373,9 @@ async def get_aged_payables_for_contact(
 
 
 @ai.tool
-async def summarize_cash_position(session_id: str) -> str:
+async def summarize_cash_position() -> str:
     """Quick snapshot: outstanding receivables, payables, and recent bank activity."""
-    accounting, tenant_id = get_accounting_api(session_id)
+    accounting, tenant_id = _api()
 
     receivables = accounting.get_invoices(
         tenant_id,

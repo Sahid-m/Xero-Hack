@@ -43,6 +43,23 @@ SCOPES = [
     "accounting.reports.profitandloss.read",
 ]
 
+# Fields the xero-python OAuth2Token accepts — tenant_id is stored separately.
+_SDK_TOKEN_KEYS = frozenset(
+    {
+        "access_token",
+        "refresh_token",
+        "expires_in",
+        "expires_at",
+        "token_type",
+        "scope",
+        "id_token",
+    }
+)
+
+
+def _sdk_token(raw: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in raw.items() if k in _SDK_TOKEN_KEYS}
+
 
 def _normalize_token(raw: dict[str, Any]) -> dict[str, Any]:
     token = dict(raw)
@@ -199,16 +216,17 @@ def _api_client_for_session(session_id: str, settings: Settings) -> ApiClient:
 
     @api_client.oauth2_token_getter
     def obtain_token() -> dict[str, Any] | None:
-        return load_tokens(session_id)
+        stored = load_tokens(session_id)
+        return _sdk_token(stored) if stored else None
 
     @api_client.oauth2_token_saver
     def store_token(token: dict[str, Any]) -> None:
         existing = load_tokens(session_id) or {}
-        save_tokens(session_id, {**existing, **token})
+        save_tokens(session_id, {**existing, **_sdk_token(token)})
 
     stored = load_tokens(session_id)
     if stored:
-        api_client.set_oauth2_token(stored)
+        api_client.set_oauth2_token(_sdk_token(stored))
 
     return api_client
 
