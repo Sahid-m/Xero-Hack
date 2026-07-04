@@ -31,8 +31,8 @@ import {
 const STARTERS = [
   "What can you access from my Xero account?",
   "How much am I owed right now?",
-  "I run a café — help me get set up on Xero.",
-  "What's the difference between sole trader and Ltd for VAT?",
+  "Show me this month's profit and loss.",
+  "List my unpaid bills.",
 ];
 
 function useSessionId(): string | null {
