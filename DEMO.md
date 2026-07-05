@@ -31,7 +31,8 @@ WhatsApp (photo / text / voice note)
    Voca backend (FastAPI)
         │
         ├─ Fast paths (regex-matched, <1s): receivables, payables, cash position,
-        │  P&L, latest invoice, recent expense, receipt confirm/add
+        │  P&L, latest invoice, recent expense, receipt confirm/add, MTD readiness,
+        │  MTD tax pack (chart + CSV/PDF)
         │
         ├─ Receipt OCR (vision model): photo → vendor / amount / category / date,
         │  auto-converts non-GBP currency with a disclosed note
@@ -41,6 +42,9 @@ WhatsApp (photo / text / voice note)
                 │
                 ▼
         Xero (Demo Company) — contacts, invoices, bills, bank transactions, payments
+                ▲
+                │ Xero webhook (invoice paid / new bill)
+        POST /webhooks/xero → proactive WhatsApp follow-up (within 24h window)
 ```
 
 Slow paths (full agent, OCR+write combos) **ack immediately** and deliver the real answer via
@@ -93,25 +97,31 @@ contact with a similar name).
 
 ### Step 3 — Reconciliation (the bounty's "smart matching")
 
+**⚠️ Needs a fresh unreconciled pair before each rehearsal/take** — once a match is reconciled, it's
+gone (real Xero data, not reset between runs). Either: (a) create a bill via the receipt-photo flow
+above, then get a matching bank transaction recorded against the same supplier/amount (in Xero
+directly, or ask me to seed one — that's a real write to your live org, so I'll always ask first), or
+(b) check `find_reconciliation_matches` a beat before recording to confirm a live pair currently
+exists.
+
 > *"Can you reconcile my bank transactions with my bills please"*
 
 **Expect:** Voca cross-references unreconciled bank transactions against outstanding bills/invoices by
 amount, date proximity, and contact-name similarity, and proposes a ranked match:
 
-> *PowerDirect — bank payment £108.60 on 27 June matches invoice RPT445-1 for £108.60 (electricity
-> bill). 100% confidence. Should I reconcile this?*
+> *[Supplier] — bank payment £X on [date] matches invoice [ref] for £X ([description]). N% confidence.
+> Should I reconcile this?*
 
 > *"Yes please reconcile it"*
 
 **Expect:**
-> *Done. Reconciled — matched £108.60 bank transaction to invoice RPT445-1 (PowerDirect electricity).
-> Both are now settled.*
+> *Done. Reconciled — matched £X bank transaction to invoice [ref] ([supplier]). Both are now settled.*
 
 Flip to Xero → the bill now shows **Paid**, and a Payment record links it to the bank transaction.
 This is the step most bookkeeping tools *don't* automate — matching real bank movement to the right
 open invoice/bill without a human squinting at two screens.
 
-### Step 4 — Reporting (and the actual regulatory deadline)
+### Step 4 — Reporting and the actual regulatory deadline
 
 > *"What's my cash position?"*
 
@@ -123,14 +133,24 @@ Then the closer — the question that actually matters given Making Tax Digital:
 > *"Am I ready for my MTD update?"*
 
 **Expect (instant, fast-path):**
-> *MTD Q1 (2026-04-06 to 2026-07-05): £32,968.05 income, £20,179.18 expenses, £12,788.87 net profit
-> so far. Next digital update due 2026-08-07 - 33 days away.*
+> *MTD Q1 (2026-04-06 to 2026-07-05): £X income, £Y expenses, £Z net profit so far. Next digital
+> update due 2026-08-07 - N days away.*
 
 This is computed live — which HMRC quarter today falls in, the exact submission deadline, and the
 real income/expenses/net profit that quarter's digital update will be built from.
 
-**One line closing the loop:** *"Photo in, bill recorded, payment matched, MTD deadline answered —
-nobody opened Xero, and every number on screen came from the real API."*
+### Step 5 — The tax pack (turns numbers into a filing-ready artefact)
+
+> *"Prepare my tax pack"*
+
+**Expect (instant, fast-path):** turnover and expenses mapped into HMRC's actual official
+self-employment expense categories, plus a chart image and CSV/PDF download links — a real bar chart
+of the category breakdown arrives as a WhatsApp image a few seconds later (fire-and-forget, doesn't
+block the text reply). Always framed honestly: **this preps the numbers, it is not itself a submission
+to HMRC** (real MTD filing needs HMRC-accredited software talking to their API directly).
+
+**One line closing the loop:** *"Photo in, bill recorded, payment matched, tax pack ready — nobody
+opened Xero, and every number came from the real API."*
 
 ---
 
@@ -140,12 +160,14 @@ nobody opened Xero, and every number on screen came from the real API."*
 
 > *"Send an invoice to Bayside Club for two hundred pounds for plumbing — yes go ahead"*
 
-Creates, authorises, and emails the invoice in one shot. Try a currency curveball too:
+Creates, authorises, and emails the invoice in one shot.
 
-> *"Send an invoice to Bayside Club for two hundred dollars"*
-
-Voca will **not** silently treat $200 as £200 — it flags the currency mismatch and asks you to confirm
-the GBP amount first. (This Xero org is GBP-only; there's no live FX rate to convert a write safely.)
+**Do not demo the currency-mismatch guardrail live right now.** It's enforced in code at the tool
+level (`draft_invoice`/`create_and_send_invoice` refuse a non-GBP `currency` argument), but a known gap
+remains: the invoice *fast path*'s number parser (`parse_gbp`) ignores currency words entirely when a
+number-word phrase like "two hundred" is present, so "two hundred dollars" can still slip through the
+fast path and create a GBP invoice before the tool-level guardrail ever sees it. Confirmed live during
+testing — do not repeat this phrase on stage until that fast-path gap is closed.
 
 ### Chasing overdue payment
 
@@ -160,6 +182,7 @@ the GBP amount first. (This Xero org is GBP-only; there's no live FX rate to con
 - *"What was my recent expense?"*
 - *"What's my cash position?"*
 - *"Am I ready for my MTD update?"*
+- *"Prepare my tax pack"*
 
 ---
 
@@ -184,6 +207,8 @@ the GBP amount first. (This Xero org is GBP-only; there's no live FX rate to con
 | *"What stops it double-billing?"* | A receipt is marked "added" after the write; a stray later "yes" won't re-record it. |
 | *"Reconciliation sounds risky — what if it matches wrong?"* | It only acts after an explicit confirm, and only surfaces matches above a confidence threshold (amount + date + contact-name similarity) — low-confidence pairs are never proposed. |
 | *"Business model?"* | Undercuts a £100–200/month bookkeeper; every write is Xero-native so accountants get clean data, not a shadow ledger. |
+| *"Does it just answer questions, or actually help file taxes?"* | It maps the quarter's real Xero data into HMRC's own official expense categories and hands you a chart + CSV/PDF — genuine prep work, not just a chat answer. Framed honestly: it's not a submission (that needs HMRC-accredited software talking to their API directly), it's the "raw Xero export → HMRC categories" step done for you. |
+| *"Can it message you proactively, not just reply?"* | Yes — a Xero webhook triggers a WhatsApp follow-up when an invoice gets paid or a new bill lands, within WhatsApp's 24h customer-service window (no cold-push without a pre-approved template, a real platform constraint, not a shortcut we took). |
 
 ---
 
@@ -197,6 +222,12 @@ the GBP amount first. (This Xero org is GBP-only; there's no live FX rate to con
 - [ ] Xero connected for the demo `connection_id` (web app → Connect Xero)
 - [ ] Run *"how much am I owed"* once before judges arrive — refreshes the fast-path cache and confirms
       the whole chain works
+- [ ] **Confirm a fresh reconciliation match exists** (Step 3 above) — it's consumed once used and
+      doesn't reset
+- [ ] **Do not** demo "two hundred dollars" style currency phrasing — known fast-path gap, see Step 4
+      area above
+- [ ] If demoing proactive notifications: confirm the Xero webhook is registered (developer.xero.com →
+      your app → Webhooks → `/webhooks/xero`) and you've messaged Voca within the last 24h
 - [ ] Have a receipt photo ready to send (camera roll or a saved sample image)
 - [ ] Projector on Xero: **Bills to pay** and **Sales overview** tabs ready to flip to
 - [ ] Backup: screen-record one full clean run beforehand in case of live-demo gremlins
