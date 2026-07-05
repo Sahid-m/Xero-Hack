@@ -12,6 +12,7 @@ from app.agent.tools.xero_queries import (
     list_invoices,
     list_outstanding_payables,
     list_outstanding_receivables,
+    mtd_quarter_summary,
     summarize_cash_position,
 )
 from app.demo_state import set_receivables
@@ -49,6 +50,15 @@ _RECENT_EXPENSE = re.compile(
     r"recent purchase|latest purchase|last purchase|"
     r"what did i spend|my recent spend|latest spend|"
     r"what'?s my (?:recent|latest) expense|what is my (?:recent|latest) expense"
+    r")\b",
+    re.I,
+)
+_MTD = re.compile(
+    r"\b("
+    r"mtd|making tax digital|tax update|quarterly update|"
+    r"tax deadline|tax submission|"
+    r"am i ready for (?:my )?(?:mtd|tax)|"
+    r"quarterly (?:tax )?summary|next tax deadline"
     r")\b",
     re.I,
 )
@@ -186,6 +196,16 @@ def _format_recent_expense(raw: str) -> str:
     return msg
 
 
+def _format_mtd(raw: str) -> str:
+    data = json.loads(raw)
+    if data.get("error"):
+        return str(data["error"])
+    audit = data.get("audit")
+    if isinstance(audit, str) and audit.strip():
+        return audit
+    return "I've pulled your MTD quarter numbers — check the Voca app for the full breakdown."
+
+
 def peek_voice_fast_cache(connection_id: str, user_text: str) -> str | None:
     """Return a cached fast-path answer without calling Xero."""
     text = user_text.strip()
@@ -204,6 +224,8 @@ def peek_voice_fast_cache(connection_id: str, user_text: str) -> str | None:
         intent = "latest_invoice"
     elif _RECENT_EXPENSE.search(text):
         intent = "recent_expense"
+    elif _MTD.search(text):
+        intent = "mtd"
     if not intent:
         return None
     return _cache_get(connection_id, intent)
@@ -221,6 +243,7 @@ def is_fast_lookup(text: str) -> bool:
         or _PL.search(text)
         or _LATEST_INVOICE.search(text)
         or _RECENT_EXPENSE.search(text)
+        or _MTD.search(text)
     )
 
 
@@ -248,6 +271,8 @@ async def try_voice_fast_path(
         intent = "latest_invoice"
     elif _RECENT_EXPENSE.search(text):
         intent = "recent_expense"
+    elif _MTD.search(text):
+        intent = "mtd"
 
     if not intent:
         return None
@@ -280,6 +305,8 @@ async def try_voice_fast_path(
         elif intent == "recent_expense":
             raw = await list_invoices.fn(invoice_type="ACCPAY", status="all", limit=50)
             reply = _format_recent_expense(raw)
+        elif intent == "mtd":
+            reply = _format_mtd(await mtd_quarter_summary.fn())
         else:
             return None
     finally:

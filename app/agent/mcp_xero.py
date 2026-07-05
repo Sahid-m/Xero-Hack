@@ -26,16 +26,18 @@ from app.agent.tools.xero import (
     record_supplier_bill,
     send_payment_reminder,
 )
-from app.agent.tools.xero_queries import find_reconciliation_matches
+from app.agent.tools.xero_queries import find_reconciliation_matches, mtd_quarter_summary
 
-# MCP cannot authorise invoices, email payment reminders, or match/record
-# reconciliation payments — keep these local tools.
+# MCP cannot authorise invoices, email payment reminders, match/record
+# reconciliation payments, or compute an MTD-quarter readiness summary —
+# keep these local tools.
 GAP_TOOLS: list[ai.AgentTool] = [
     create_and_send_invoice,
     record_supplier_bill,
     send_payment_reminder,
     find_reconciliation_matches,
     reconcile_invoice_payment,
+    mtd_quarter_summary,
 ]
 
 

@@ -111,17 +111,26 @@ Flip to Xero → the bill now shows **Paid**, and a Payment record links it to t
 This is the step most bookkeeping tools *don't* automate — matching real bank movement to the right
 open invoice/bill without a human squinting at two screens.
 
-### Step 4 — Reporting
+### Step 4 — Reporting (and the actual regulatory deadline)
 
 > *"What's my cash position?"*
 
 **Expect (instant, fast-path):**
 > *You're owed £X and you owe £Y to suppliers. There were N bank transactions in the last seven days.*
 
-Or for the full picture: *"How much profit did I make this month?"* pulls a live P&L summary.
+Then the closer — the question that actually matters given Making Tax Digital:
 
-**One line closing the loop:** *"Photo in, bill recorded, payment matched, reported back — nobody
-opened Xero, and every number on screen came from the real API."*
+> *"Am I ready for my MTD update?"*
+
+**Expect (instant, fast-path):**
+> *MTD Q1 (2026-04-06 to 2026-07-05): £32,968.05 income, £20,179.18 expenses, £12,788.87 net profit
+> so far. Next digital update due 2026-08-07 - 33 days away.*
+
+This is computed live — which HMRC quarter today falls in, the exact submission deadline, and the
+real income/expenses/net profit that quarter's digital update will be built from.
+
+**One line closing the loop:** *"Photo in, bill recorded, payment matched, MTD deadline answered —
+nobody opened Xero, and every number on screen came from the real API."*
 
 ---
 
@@ -150,6 +159,7 @@ the GBP amount first. (This Xero org is GBP-only; there's no live FX rate to con
 - *"What's my latest invoice?"*
 - *"What was my recent expense?"*
 - *"What's my cash position?"*
+- *"Am I ready for my MTD update?"*
 
 ---
 

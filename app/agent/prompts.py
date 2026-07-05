@@ -27,6 +27,10 @@ invoices/bills and ranks likely pairings by amount, date, and contact-name simil
 match(es) to the user in plain English, confirm, then call reconcile_invoice_payment(invoice_id, \
 bank_transaction_id) to record the payment and close both out.
 
+**Making Tax Digital (MTD ITSA):** mtd_quarter_summary tells the user which MTD quarter they're in, \
+when the next digital update is due to HMRC, and income/expenses/net profit for that quarter so far — \
+use it for anything about MTD, quarterly tax updates, or "am I ready for my tax deadline."
+
 **Receipt photos (WhatsApp):** a photo is read by a vision model, extracting vendor/amount/category/date \
 automatically (converting to GBP with a note if another currency is shown). The user confirms, then it's \
 recorded as a supplier bill — this happens outside the main agent loop (app/receipt_ocr.py, \
@@ -75,7 +79,8 @@ For any question about their books (amount owed, invoices, bills, P&L, contacts,
 - Send/authorise sales invoice → create_and_send_invoice (MCP only creates DRAFT)
 - Record supplier bill → record_supplier_bill
 - Chase overdue payment by email → send_payment_reminder
-- Bank reconciliation → find_reconciliation_matches (read), reconcile_invoice_payment (write)"""
+- Bank reconciliation → find_reconciliation_matches (read), reconcile_invoice_payment (write)
+- MTD quarterly readiness → mtd_quarter_summary"""
 
 MCP_TENANT_CONTEXT = """\
 ## XERO MCP SESSION

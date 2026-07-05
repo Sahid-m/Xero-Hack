@@ -440,6 +440,89 @@ async def get_profit_and_loss(
     )
 
 
+def _mtd_quarters_for_tax_year(start_year: int) -> list[tuple[date, date, date, str]]:
+    """UK MTD ITSA standard quarters for the tax year starting 6 Apr start_year."""
+    return [
+        (date(start_year, 4, 6), date(start_year, 7, 5), date(start_year, 8, 7), "Q1"),
+        (date(start_year, 7, 6), date(start_year, 10, 5), date(start_year, 11, 7), "Q2"),
+        (date(start_year, 10, 6), date(start_year + 1, 1, 5), date(start_year + 1, 2, 7), "Q3"),
+        (date(start_year + 1, 1, 6), date(start_year + 1, 4, 5), date(start_year + 1, 5, 7), "Q4"),
+    ]
+
+
+def _current_mtd_quarter(as_of: date) -> tuple[date, date, date, str]:
+    for start_year in (as_of.year - 1, as_of.year):
+        for q_start, q_end, deadline, label in _mtd_quarters_for_tax_year(start_year):
+            if q_start <= as_of <= q_end:
+                return q_start, q_end, deadline, label
+    raise ValueError(f"Could not resolve MTD quarter for {as_of.isoformat()}")
+
+
+def _pl_total(rows: list[dict[str, Any]], *labels: str) -> float | None:
+    """Find a named total row (e.g. "Total Income", "Net Profit") anywhere in a parsed P&L report."""
+    for row in rows:
+        title = (row.get("cells") or [None])[0]
+        if isinstance(title, str) and title.strip() in labels:
+            cells = row.get("cells") or []
+            if len(cells) > 1:
+                try:
+                    return float(str(cells[1]).replace(",", ""))
+                except (TypeError, ValueError):
+                    return None
+        found = _pl_total(row.get("children") or [], *labels)
+        if found is not None:
+            return found
+    return None
+
+
+@ai.tool
+async def mtd_quarter_summary(as_of_date: str = "") -> str:
+    """
+    Making Tax Digital (ITSA) quarterly readiness check: which MTD quarter is
+    "as_of_date" (default today) in, when is the next digital update due, and
+    what does this quarter's income/expenses/net profit look like so far —
+    the numbers that quarter's HMRC submission will be built from.
+    """
+    accounting, tenant_id = _api()
+    as_of = _parse_due_date(as_of_date) or date.today()
+    q_start, q_end, deadline, label = _current_mtd_quarter(as_of)
+
+    report = await asyncio.to_thread(
+        accounting.get_report_profit_and_loss,
+        tenant_id,
+        from_date=q_start.isoformat(),
+        to_date=min(q_end, as_of).isoformat(),
+    )
+    parsed = parse_xero_report(report)
+    rows = parsed.get("rows") or []
+
+    income = _pl_total(rows, "Total Income") or 0.0
+    expenses = _pl_total(rows, "Total Operating Expenses") or 0.0
+    cost_of_sales = _pl_total(rows, "Total Cost of Sales") or 0.0
+    net_profit = _pl_total(rows, "Net Profit")
+    if net_profit is None:
+        net_profit = income - expenses - cost_of_sales
+
+    days_left = (deadline - as_of).days
+
+    return tool_result(
+        mtd_quarter=label,
+        quarter_start=q_start.isoformat(),
+        quarter_end=q_end.isoformat(),
+        submission_deadline=deadline.isoformat(),
+        days_until_deadline=days_left,
+        income_gbp=round(income, 2),
+        expenses_gbp=round(expenses + cost_of_sales, 2),
+        net_profit_gbp=round(net_profit, 2),
+        audit=(
+            f"MTD {label} ({q_start.isoformat()} to {q_end.isoformat()}): "
+            f"£{income:,.2f} income, £{expenses + cost_of_sales:,.2f} expenses, "
+            f"£{net_profit:,.2f} net profit so far. Next digital update due "
+            f"{deadline.isoformat()} — {days_left} day{'s' if days_left != 1 else ''} away."
+        ),
+    )
+
+
 @ai.tool
 async def get_aged_receivables_for_contact(
     contact_id: str,
@@ -667,4 +750,5 @@ QUERY_TOOLS: list[ai.AgentTool] = [
     get_aged_payables_for_contact,
     summarize_cash_position,
     find_reconciliation_matches,
+    mtd_quarter_summary,
 ]
