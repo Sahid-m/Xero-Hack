@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
+import re
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -21,6 +25,8 @@ from app.db import (
 
 TOKEN_DIR = Path("data/xero")
 TOKEN_DIR.mkdir(parents=True, exist_ok=True)
+
+_refresh_lock = threading.Lock()
 
 AUTHORIZE_URL = "https://login.xero.com/identity/connect/authorize"
 TOKEN_URL = "https://identity.xero.com/connect/token"
@@ -129,6 +135,47 @@ def resolve_xero_connection(connection_id: str, legacy_ids: list[str] | None = N
     if _adopt_recent_connection(connection_id):
         return connection_id
     return connection_id
+
+
+def latest_connected_connection_id() -> str | None:
+    """Most recently updated session with valid Xero tokens (dev / web-test fallback)."""
+    if not db_enabled():
+        return None
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT session_id FROM voca_sessions
+            WHERE xero_tokens IS NOT NULL
+              AND xero_tokens->>'access_token' IS NOT NULL
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """
+        ).fetchone()
+    return row["session_id"] if row else None
+
+
+def connection_id_for_tenant(tenant_id: str) -> str | None:
+    """Reverse-lookup: which connection_id holds tokens for this Xero tenant_id.
+
+    Needed for Xero webhooks — they carry tenantId, not our connection_id.
+    """
+    if not db_enabled():
+        return None
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT session_id FROM voca_sessions
+            WHERE xero_tokens->>'tenant_id' = %s
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """,
+            (tenant_id,),
+        ).fetchone()
+    return row["session_id"] if row else None
 
 
 def _adopt_recent_connection(target_id: str) -> bool:
@@ -245,8 +292,12 @@ def ensure_token(connection_id: str, settings: Settings | None = None) -> dict[s
     if expires_at and expires_at <= time.time() + 60:
         if not token.get("refresh_token"):
             raise RuntimeError("Xero token expired and no refresh token available.")
-        token = _refresh_access_token(token, settings)
-        save_tokens(connection_id, token)
+        with _refresh_lock:
+            token = load_tokens(connection_id) or token
+            expires_at = token.get("expires_at")
+            if expires_at and expires_at <= time.time() + 60:
+                token = _refresh_access_token(token, settings)
+                save_tokens(connection_id, token)
 
     return token
 

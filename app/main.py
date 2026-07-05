@@ -1,3 +1,6 @@
+import asyncio
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -5,14 +8,15 @@ from app.config import get_settings
 from app.db import db_enabled, init_db
 from app.routes.chat import register_validation_logger, router as chat_router
 from app.routes.messages import router as messages_router
-from app.routes.voice import router as voice_router
+from app.routes.demo import router as demo_router
 from app.routes.xero_auth import router as xero_auth_router
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Voca",
-    description="Xero without ever opening Xero — voice-first setup & operation agent",
+    description="WhatsApp bookkeeper for Xero — text and voice notes via Wassist",
     version="0.1.0",
 )
 
@@ -27,13 +31,21 @@ app.add_middleware(
 register_validation_logger(app)
 app.include_router(chat_router)
 app.include_router(messages_router)
-app.include_router(voice_router)
+app.include_router(demo_router)
 app.include_router(xero_auth_router)
 
 
 @app.on_event("startup")
-def on_startup() -> None:
+async def on_startup() -> None:
+    logging.basicConfig(level=logging.INFO)
     init_db()
+    from app.voice_fast import warm_voice_cache
+    from app.wassist import demo_connection_id
+
+    connection_id = demo_connection_id()
+    if connection_id:
+        asyncio.create_task(warm_voice_cache(connection_id))
+        logger.info("warming receivables cache for %s", connection_id[:20])
 
 
 @app.get("/")
@@ -45,10 +57,15 @@ def root() -> dict:
         "endpoints": {
             "health": "/health",
             "docs": "/docs",
-            "chat": "/api/chat",
             "xero_connect": "/auth/xero?session_id=...",
             "xero_status": "/auth/xero/status?session_id=...",
-            "voice_webhook": "/voice/webhook",
+            "demo_mirror": "/demo (Next.js)",
+            "demo_state": "/api/demo/state",
+            "receipts_upload": "/receipts/upload",
+            "whatsapp_byoa": "/whatsapp/byoa",
+            "whatsapp_link": "/api/whatsapp/link",
+            "whatsapp_webhook": "/whatsapp/webhook (legacy)",
+            "whatsapp_receipt": "/whatsapp/receipt",
         },
     }
 
@@ -62,6 +79,6 @@ def health() -> dict:
         "ai_configured": settings.ai_configured,
         "database_configured": db_enabled(),
         "model": settings.ai_default_model,
-        "voice_configured": settings.voice_configured,
-        "voca_phone_number": settings.voca_phone_number or None,
+        "whatsapp_configured": bool(settings.public_base_url),
+        "public_base_url": settings.public_base_url or None,
     }

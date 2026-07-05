@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from app.agent.voca_agent import MODEL, agent_for_session, system_prompt_for_session
 from app.session import save_chat_messages
 from app.session_context import bind_request_context, reset_request_context
+from ai.agents.mcp.client import ensure_connection_pool
 
 if TYPE_CHECKING:
     pass
@@ -62,21 +63,22 @@ async def chat(request: ChatRequest) -> StreamingResponse:
         ),
         *messages,
     ]
-    agent = agent_for_session(chat_session_id)
+    agent = await agent_for_session(chat_session_id, connection_id)
     chat_token, xero_token = bind_request_context(chat_session_id, connection_id)
 
     async def stream_response() -> AsyncGenerator[str]:
         try:
-            async with agent.run(MODEL, full_messages) as result:
+            async with ensure_connection_pool():
+                async with agent.run(MODEL, full_messages) as result:
 
-                async def process() -> AsyncGenerator[ai.events.AgentEvent]:
-                    async for event in result:
-                        if isinstance(event, ai.events.HookEvent) and event.hook.status == "pending":
-                            ai.abort_pending_hook(event.hook)
-                        yield event
+                    async def process() -> AsyncGenerator[ai.events.AgentEvent]:
+                        async for event in result:
+                            if isinstance(event, ai.events.HookEvent) and event.hook.status == "pending":
+                                ai.abort_pending_hook(event.hook)
+                            yield event
 
-                async for chunk in ai.agents.ui.ai_sdk.to_sse(process()):
-                    yield chunk
+                    async for chunk in ai.agents.ui.ai_sdk.to_sse(process()):
+                        yield chunk
         finally:
             reset_request_context(chat_token, xero_token)
 

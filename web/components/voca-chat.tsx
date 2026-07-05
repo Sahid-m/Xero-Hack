@@ -16,11 +16,11 @@ import {
   Square,
   User,
 } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentActivity } from "./agent-activity";
 import { MessageContent } from "./message-content";
 import { ToolCallCard } from "./tool-call-card";
-import { VocaPhone } from "./voca-phone";
 import {
   clearChat,
   getLegacySessionIds,
@@ -37,6 +37,32 @@ const STARTERS = [
   "Show me this month's profit and loss.",
   "List my unpaid bills.",
 ];
+
+function WassistHint({
+  connectionId,
+  xeroConnected,
+}: {
+  connectionId: string;
+  xeroConnected: boolean;
+}) {
+  return (
+    <div className="space-y-3 text-sm">
+      <p className="font-medium text-zinc-200">WhatsApp → Demo Company (UK)</p>
+      <p className="text-zinc-500">
+        All messages use one Xero org. Wassist BYOA webhook:
+      </p>
+      <code className="block break-all rounded-lg bg-zinc-900/80 p-2 text-xs text-[#5eead4]">
+        {"{PUBLIC_BASE_URL}/whatsapp/byoa"}
+      </code>
+      <p className="text-xs text-zinc-600">
+        Connection: {connectionId.slice(0, 12)}… (fixed for demo)
+      </p>
+      {!xeroConnected && (
+        <p className="text-amber-400/90">Connect Demo Company above first.</p>
+      )}
+    </div>
+  );
+}
 
 function useConnectionId(): string | null {
   const [connectionId, setConnectionId] = useState<string | null>(null);
@@ -162,6 +188,12 @@ function VocaChatInner({
               >
                 {sessionShort}
               </span>
+              <Link
+                href="/demo"
+                className="rounded-lg border border-white/10 px-2 py-1 text-xs text-white/60 hover:bg-white/5"
+              >
+                Mirror
+              </Link>
               {xeroConnected ? (
                 <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-400">
                   <CheckCircle2 className="size-3" />
@@ -353,7 +385,7 @@ function VocaChatInner({
       <div className="hidden w-72 shrink-0 border-l border-white/[0.06] bg-[#08080a]/50 xl:block xl:w-80">
         <div className="flex h-full flex-col">
           <div className="shrink-0 border-b border-white/[0.06] p-4">
-            <VocaPhone connectionId={connectionId} xeroConnected={xeroConnected} />
+            <WassistHint connectionId={connectionId} xeroConnected={xeroConnected} />
           </div>
           <div className="min-h-0 flex-1 overflow-hidden">
             <AgentActivity

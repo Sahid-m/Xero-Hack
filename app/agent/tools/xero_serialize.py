@@ -112,6 +112,9 @@ def slim_bank_transaction(txn: Any) -> dict[str, Any]:
         "total": txn.total,
         "reference": txn.reference,
         "contact": txn.contact.name if txn.contact else None,
+        "is_reconciled": txn.is_reconciled,
+        "bank_account_code": txn.bank_account.code if txn.bank_account else None,
+        "bank_account_name": txn.bank_account.name if txn.bank_account else None,
         "line_items": [
             {
                 "description": item.description,
@@ -146,10 +149,14 @@ def parse_xero_report(report: Any, max_rows: int = 40) -> dict[str, Any]:
                 break
             entry: dict[str, Any] = {
                 "title": row.title,
-                "cells": [c.value for c in (row.cells or [])],
+                "cells": [
+                    c.get("value") if isinstance(c, dict) else getattr(c, "value", c)
+                    for c in (row.cells or [])
+                ],
             }
-            if row.rows:
-                entry["children"] = walk_rows(row.rows, depth + 1)
+            child_rows = getattr(row, "rows", None)
+            if child_rows:
+                entry["children"] = walk_rows(child_rows, depth + 1)
             out.append(entry)
         return out
 

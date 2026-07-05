@@ -14,16 +14,22 @@ class Settings(BaseSettings):
     xero_client_secret: str = ""
     xero_tenant_id: str = ""
     xero_redirect_uri: str = "http://localhost:8000/auth/xero/callback"
+    xero_webhook_key: str = ""
 
     anthropic_api_key: str = ""
     ai_default_model: str = "anthropic:claude-sonnet-4-6"
+    # Model for WhatsApp turns (voice-note transcripts + text)
+    voice_ai_model: str = "anthropic:claude-haiku-4-5"
 
-    elevenlabs_api_key: str = ""
-    elevenlabs_agent_id: str = ""
-    voca_phone_number: str = ""
     public_base_url: str = ""
 
+    # Wassist BYOA — https://docs.wassist.app/concepts/bring-your-own-agent
+    wassist_api_key: str = ""
+    wassist_api_base: str = "https://backend.wassist.app"
+    wassist_default_connection_id: str = "conv_9501kwqfmzf0frwsza9pakj5spjz"
+
     database_url: str = ""
+    xero_mcp_url: str = "https://builders.xero.com/beta/mcp"
 
     @property
     def xero_app_configured(self) -> bool:
@@ -32,10 +38,6 @@ class Settings(BaseSettings):
     @property
     def ai_configured(self) -> bool:
         return bool(self.anthropic_api_key)
-
-    @property
-    def voice_configured(self) -> bool:
-        return bool(self.elevenlabs_api_key and self.voca_phone_number)
 
 
 @lru_cache

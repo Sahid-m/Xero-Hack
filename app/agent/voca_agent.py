@@ -1,4 +1,4 @@
-"""Voca agent — Claude brain with Xero tools and confirm-before-write hooks."""
+"""Voca agent — Claude brain with Xero MCP tools + session setup tools."""
 
 from __future__ import annotations
 
@@ -6,11 +6,18 @@ import os
 
 import ai
 
-from app.agent.prompts import SETUP_INTERVIEW_HINT, VOCA_SYSTEM, XERO_CONNECTED_RULES, XERO_DISCONNECTED_RULES
-from app.agent.tools.xero import ALL_TOOLS
+from app.agent.common_patterns import VOICE_COMMON_PATTERNS, WEB_COMMON_PATTERNS
+from app.agent.mcp_xero import build_agent
+from app.agent.prompts import (
+    MCP_TENANT_CONTEXT,
+    SETUP_INTERVIEW_HINT,
+    VOCA_SYSTEM,
+    XERO_CONNECTED_RULES,
+    XERO_DISCONNECTED_RULES,
+)
 from app.config import get_settings
 from app.session import get_session
-from app.xero_client import is_connected, resolve_xero_connection
+from app.xero_client import ensure_token, is_connected, resolve_xero_connection
 
 settings = get_settings()
 
@@ -18,8 +25,6 @@ if settings.anthropic_api_key:
     os.environ.setdefault("ANTHROPIC_API_KEY", settings.anthropic_api_key)
 
 MODEL = ai.get_model(settings.ai_default_model)
-
-voca_agent = ai.Agent(tools=ALL_TOOLS)
 
 
 def system_prompt_for_session(
@@ -41,6 +46,10 @@ def system_prompt_for_session(
 
     if connected:
         parts.append(XERO_CONNECTED_RULES)
+        tenant_id = ensure_token(connection_id).get("tenant_id")
+        if tenant_id:
+            parts.append(MCP_TENANT_CONTEXT.format(tenant_id=tenant_id))
+        parts.append(WEB_COMMON_PATTERNS)
     else:
         parts.append(XERO_DISCONNECTED_RULES)
 
@@ -62,5 +71,9 @@ def system_prompt_for_session(
     return "\n".join(parts)
 
 
-def agent_for_session(session_id: str | None) -> ai.Agent:
-    return voca_agent
+async def agent_for_session(
+    session_id: str | None,
+    connection_id: str | None = None,
+) -> ai.Agent:
+    cid = connection_id or session_id
+    return await build_agent(cid)

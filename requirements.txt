@@ -1,8 +1,9 @@
 fastapi>=0.115.0
 uvicorn[standard]>=0.34.0
+python-multipart>=0.0.9
 python-dotenv>=1.0.0
 httpx>=0.28.0
 pydantic-settings>=2.8.0
 xero-python>=9.0.0
-ai[anthropic]>=0.2.1
+ai[anthropic,mcp]>=0.2.1
 psycopg[binary]>=3.2.0
