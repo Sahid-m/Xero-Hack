@@ -129,6 +129,7 @@ async def _create_and_send(
             customer_name=customer,
             description=description,
             amount_gbp=amount,
+            currency="GBP",  # this fast path only matches phrasing that already said pounds/£
             reference="voca-voice",
             create_if_missing=create_if_missing,
         )

@@ -25,6 +25,32 @@ from app.session_context import chat_session_id, xero_connection_id
 from app.xero_client import get_accounting_api
 from app.agent.tools.xero_queries import QUERY_TOOLS
 
+_GBP_ALIASES = {"gbp", "£", "pound", "pounds", "sterling", "gb pound", "gbpound"}
+
+
+def _is_gbp(currency: str) -> bool:
+    return currency.strip().lower() in _GBP_ALIASES
+
+
+def _currency_mismatch_response(currency: str, amount: float, *, action: str) -> str:
+    """This Xero org is GBP-only — refuse in code rather than trust the model's
+    own judgment on whether to ask first (require_approval hooks are
+    auto-granted for WhatsApp/voice turns, so this is the actual enforcement
+    point, not just a prompt instruction)."""
+    return _json(
+        {
+            "currency_mismatch": True,
+            "stated_currency": currency,
+            "amount": amount,
+            "error": f"Amount was given in {currency}, not GBP.",
+            "audit": (
+                f"You said {currency} {amount:,.2f} — this Xero org only handles GBP and I have no "
+                f"live exchange rate to convert accurately. Please confirm the amount in pounds "
+                f"before I {action}."
+            ),
+        }
+    )
+
 
 def _json(data: dict[str, Any]) -> str:
     return json.dumps(data, default=str)
@@ -383,10 +409,23 @@ async def configure_invoice_defaults(
 async def draft_invoice(
     customer_name: str,
     line_items: list[dict[str, Any]],
+    currency: str,
     reference: str = "",
     create_if_missing: bool = False,
 ) -> str:
-    """Draft an ACCREC invoice. Each line_item: description, quantity, unit_amount, account_code."""
+    """
+    Draft an ACCREC invoice. Each line_item: description, quantity, unit_amount, account_code.
+    currency: the currency the USER actually said (e.g. "GBP", "pounds", "USD", "dollars") —
+    state it exactly as heard, do not assume GBP. This org is GBP-only; a non-GBP currency
+    is refused here rather than silently converted, since there's no live exchange rate.
+    """
+    if not _is_gbp(currency):
+        total_hint = sum(
+            float(item.get("quantity", 1)) * float(item.get("unit_amount", 0))
+            for item in line_items
+        )
+        return _currency_mismatch_response(currency, total_hint, action="draft this invoice")
+
     accounting, tenant_id = get_accounting_api(xero_connection_id())
     session = get_session(chat_session_id())
     vat = session.get("vat_registered", False)
@@ -514,6 +553,7 @@ async def create_and_send_invoice(
     customer_name: str,
     description: str,
     amount_gbp: float,
+    currency: str,
     quantity: float = 1,
     reference: str = "",
     create_if_missing: bool = False,
@@ -521,6 +561,8 @@ async def create_and_send_invoice(
     """
     Create, authorise, and email a sales invoice in one step.
     Use for voice: customer_name, plain-English description, amount in pounds.
+    currency: the currency the USER actually said (e.g. "GBP", "pounds", "USD", "dollars") —
+    state it exactly as heard, do not assume GBP.
     Set create_if_missing=true after the caller confirms a new customer should be created.
     """
     draft_raw = await draft_invoice.fn(
@@ -532,6 +574,7 @@ async def create_and_send_invoice(
                 "unit_amount": amount_gbp,
             }
         ],
+        currency=currency,
         reference=reference,
         create_if_missing=create_if_missing,
     )
@@ -565,12 +608,18 @@ async def record_supplier_bill(
     quantity: float = 1,
     reference: str = "",
     create_if_missing: bool = False,
+    currency: str = "GBP",
 ) -> str:
     """
     Record a supplier bill / expense (ACCPAY) in Xero.
     Use when the user got a bill or spent money with a supplier.
     Set create_if_missing=true after they confirm a new supplier.
+    currency: only pass this if the USER stated a non-GBP currency (e.g. "USD", "dollars") —
+    defaults to GBP for the receipt-OCR flow, which already converts to GBP itself.
     """
+    if not _is_gbp(currency):
+        return _currency_mismatch_response(currency, amount_gbp, action="record this bill")
+
     accounting, tenant_id = get_accounting_api(xero_connection_id())
     session = get_session(chat_session_id())
     vat = session.get("vat_registered", False)
