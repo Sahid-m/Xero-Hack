@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from app.config import get_settings
 from app.demo_state import get_demo_state, set_connected
-from app.tax_export import build_tax_pack, render_csv, render_pdf
+from app.tax_export import build_tax_pack, render_chart_png, render_csv, render_pdf
 from app.wassist import (
     handle_byoa_webhook,
     handle_wassist_message,
@@ -139,6 +139,22 @@ async def mtd_summary_pdf(connection_id: str = Query(...), as_of: str = Query(""
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="mtd-{data["mtd_quarter"]}-summary.pdf"'},
     )
+
+
+@router.get("/files/mtd-summary.png")
+@router.head("/files/mtd-summary.png")
+async def mtd_summary_png(connection_id: str = Query(...), as_of: str = Query("")) -> Response:
+    """Stateless — regenerates the tax pack fresh from Xero on every request.
+
+    Unlike the PDF, images are confirmed to deliver as real WhatsApp attachments
+    (see app/wassist.py's send_document_via_wassist) — this is the actual
+    rich-media path for the tax pack on WhatsApp.
+    """
+    if not is_connected(connection_id):
+        raise HTTPException(400, "Xero isn't connected for this org.")
+    data = await build_tax_pack(connection_id, _parse_as_of(as_of))
+    body = render_chart_png(data)
+    return Response(content=body, media_type="image/png")
 
 
 @router.post("/api/whatsapp/link")

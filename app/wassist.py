@@ -512,7 +512,7 @@ async def _byoa_turn_async(
 
     if phone:
         _store_recent_reply(phone, user_text, reply)
-        # Document-bubble delivery disabled — see _maybe_send_document_bubble.
+        _maybe_send_document_bubble(phone, reply)
     logger.info("BYOA final callback len=%d url=%s", len(reply), reply_callback[:70])
     await send_byoa_reply(reply_callback, reply)
 
@@ -548,7 +548,7 @@ async def _byoa_receipt_turn_async(
 
     if phone:
         _store_recent_reply(phone, caption, reply)
-        # Document-bubble delivery disabled — see _maybe_send_document_bubble.
+        _maybe_send_document_bubble(phone, reply)
     logger.info("BYOA final receipt callback len=%d url=%s", len(reply), reply_callback[:70])
     await send_byoa_reply(reply_callback, reply)
 
@@ -586,25 +586,21 @@ async def send_byoa_reply(reply_callback: str, content: str) -> None:
         logger.exception("failed to POST BYOA reply_callback url=%s", reply_callback[:80])
 
 
-_OWN_FILE_URL = re.compile(r"https?://\S+/files/mtd-summary\.pdf\?\S+")
+# .pdf attachments are silently dropped by WhatsApp on Wassist's shared sandbox
+# number (confirmed via live testing — Wassist's API reports full success,
+# WhatsApp just never delivers the document). Images deliver fine on the same
+# number, so the chart PNG — not the PDF — is the one we actually push as a
+# native attachment.
+_OWN_CHART_URL = re.compile(r"https?://\S+/files/mtd-summary\.png\?\S+")
 
 
 def _maybe_send_document_bubble(phone: str, reply: str) -> None:
-    """Fire-and-forget: if a reply contains our own MTD PDF link, also try
-    delivering it as a native WhatsApp document bubble (better UX than a bare
-    link), without blocking or affecting the guaranteed plain-text reply.
-
-    Currently NOT called anywhere — verified end-to-end against Wassist's REST
-    API (message created, PDF mimeType confirmed, status "read"), but WhatsApp's
-    document message type is silently dropped on Wassist's shared sandbox
-    number (images deliver fine on the same number, so it's document-specific,
-    not a blanket media block). Re-wire the three call sites in
-    handle_byoa_webhook / _byoa_turn_async / _byoa_receipt_turn_async once a
-    verified production WhatsApp Business number is connected.
-    """
+    """Fire-and-forget: if a reply contains our own MTD chart PNG link, also
+    try delivering it as a native WhatsApp image bubble (better UX than a bare
+    link), without blocking or affecting the guaranteed plain-text reply."""
     if not phone:
         return
-    match = _OWN_FILE_URL.search(reply)
+    match = _OWN_CHART_URL.search(reply)
     if not match:
         return
     asyncio.create_task(
@@ -763,7 +759,7 @@ async def handle_byoa_webhook(raw: dict[str, Any]) -> dict[str, str]:
                 phone_key=phone_key,
             )
             logger.info("BYOA sync reply phone=%s len=%d", phone or "?", len(reply))
-            # Document-bubble delivery disabled — see _maybe_send_document_bubble.
+            _maybe_send_document_bubble(phone, reply)
             return byoa_response(reply)
         except Exception as exc:
             logger.exception("BYOA sync turn failed")

@@ -16,6 +16,7 @@ from datetime import date
 from typing import Any
 
 from fpdf import FPDF
+from PIL import Image, ImageDraw, ImageFont
 
 from app.agent.tools.xero_queries import _current_mtd_quarter, parse_xero_report
 from app.xero_client import get_accounting_api
@@ -212,3 +213,86 @@ def render_pdf(data: dict[str, Any]) -> bytes:
         "HMRC's API -- use this to brief your accountant or import into your filing software.",
     )
     return bytes(pdf.output())
+
+
+_CHART_BG = (255, 255, 255)
+_CHART_BAR = (37, 99, 235)  # blue-600
+_CHART_TEXT = (17, 24, 39)  # gray-900
+_CHART_MUTED = (107, 114, 128)  # gray-500
+
+
+def render_chart_png(data: dict[str, Any]) -> bytes:
+    """Horizontal bar chart of this quarter's HMRC expense categories — a WhatsApp
+    image renders reliably where a PDF document attachment does not (see
+    send_document_via_wassist's docstring in app/wassist.py), so this is the
+    actual rich-media path for the tax pack on WhatsApp."""
+    categories = data["categories"]
+    width, row_h, top_pad, bottom_pad = 1000, 56, 170, 140
+    height = top_pad + max(1, len(categories)) * row_h + bottom_pad
+
+    img = Image.new("RGB", (width, height), _CHART_BG)
+    draw = ImageDraw.Draw(img)
+
+    title_font = ImageFont.load_default(size=34)
+    subtitle_font = ImageFont.load_default(size=20)
+    label_font = ImageFont.load_default(size=20)
+    amount_font = ImageFont.load_default(size=20)
+    footer_font = ImageFont.load_default(size=22)
+
+    # PIL's default font has no glyphs for £/— (renders as tofu boxes) — stick to
+    # ASCII, matching the "GBP 1,234.56" convention already used in WhatsApp text
+    # replies elsewhere in this app (see _money() in voice_fast.py).
+    draw.text((40, 30), "MTD Tax Pack - HMRC Expense Categories", font=title_font, fill=_CHART_TEXT)
+    draw.text(
+        (40, 76),
+        f"{data['mtd_quarter']} ({data['quarter_start']} to {data['quarter_end']}) - "
+        f"next update due {data['submission_deadline']}, {data['days_until_deadline']} days away",
+        font=subtitle_font,
+        fill=_CHART_MUTED,
+    )
+
+    label_w = 400
+    bar_area_x0 = 40 + label_w
+    bar_area_w = width - bar_area_x0 - 160
+    max_amount = max((c["amount_gbp"] for c in categories), default=1) or 1
+
+    y = top_pad
+    for cat in categories:
+        label = cat["category"]
+        if len(label) > 42:
+            label = label[:39] + "..."
+        draw.text((40, y + row_h // 2 - 12), label, font=label_font, fill=_CHART_TEXT)
+
+        bar_w = max(4, int(bar_area_w * (cat["amount_gbp"] / max_amount)))
+        draw.rectangle(
+            [bar_area_x0, y + 10, bar_area_x0 + bar_w, y + row_h - 18],
+            fill=_CHART_BAR,
+        )
+        draw.text(
+            (bar_area_x0 + bar_w + 12, y + row_h // 2 - 12),
+            f"GBP {cat['amount_gbp']:,.2f}",
+            font=amount_font,
+            fill=_CHART_TEXT,
+        )
+        y += row_h
+
+    footer_y = top_pad + len(categories) * row_h + 30
+    draw.line([(40, footer_y - 10), (width - 40, footer_y - 10)], fill=(229, 231, 235), width=2)
+    draw.text((40, footer_y + 10), f"Turnover: GBP {data['turnover_gbp']:,.2f}", font=footer_font, fill=_CHART_TEXT)
+    draw.text(
+        (40, footer_y + 42),
+        f"Total expenses: GBP {data['total_expenses_gbp']:,.2f}   -   "
+        f"Net profit: GBP {data['net_profit_gbp']:,.2f}",
+        font=footer_font,
+        fill=_CHART_TEXT,
+    )
+    draw.text(
+        (40, footer_y + 80),
+        "Preparation summary - not a submission to HMRC.",
+        font=subtitle_font,
+        fill=_CHART_MUTED,
+    )
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()

@@ -547,18 +547,20 @@ async def prepare_mtd_tax_pack(as_of_date: str = "") -> str:
     params = f"connection_id={connection_id}&as_of={as_of.isoformat()}"
     csv_url = f"{base}/files/mtd-summary.csv?{params}"
     pdf_url = f"{base}/files/mtd-summary.pdf?{params}"
+    png_url = f"{base}/files/mtd-summary.png?{params}"
 
     cat_lines = "; ".join(f"{c['category']}: £{c['amount_gbp']:,.2f}" for c in data["categories"][:4])
     return tool_result(
         **data,
         csv_url=csv_url,
         pdf_url=pdf_url,
+        png_url=png_url,
         audit=(
             f"MTD {data['mtd_quarter']} tax pack ready — turnover £{data['turnover_gbp']:,.2f}, "
             f"expenses £{data['total_expenses_gbp']:,.2f} across {len(data['categories'])} HMRC "
             f"categories ({cat_lines}{'...' if len(data['categories']) > 4 else ''}), net profit "
-            f"£{data['net_profit_gbp']:,.2f}. Download: {csv_url} or {pdf_url}. This preps the "
-            f"numbers for filing — it isn't itself a submission to HMRC."
+            f"£{data['net_profit_gbp']:,.2f}. Chart: {png_url}. Download: {csv_url} or {pdf_url}. "
+            f"This preps the numbers for filing — it isn't itself a submission to HMRC."
         ),
     )
 
