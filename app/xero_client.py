@@ -28,6 +28,13 @@ TOKEN_DIR.mkdir(parents=True, exist_ok=True)
 
 _refresh_lock = threading.Lock()
 
+# Demo-time fix: load_tokens() is a fresh Neon connection per call (1.5-4.5s,
+# no pooling) and gets hit twice per single Xero API call (once in ensure_token,
+# once in _api_client_for_session). Short-TTL cache collapses that back to
+# ~one DB round trip per token generation instead of two-plus.
+_TOKEN_CACHE_TTL_SECS = 20
+_token_cache: dict[str, tuple[float, dict[str, Any] | None]] = {}
+
 AUTHORIZE_URL = "https://login.xero.com/identity/connect/authorize"
 TOKEN_URL = "https://identity.xero.com/connect/token"
 CONNECTIONS_URL = "https://api.xero.com/connections"
@@ -95,12 +102,19 @@ def _file_save_tokens(session_id: str, tokens: dict[str, Any] | None) -> None:
 
 
 def load_tokens(session_id: str) -> dict[str, Any] | None:
+    cached = _token_cache.get(session_id)
+    if cached and time.time() - cached[0] < _TOKEN_CACHE_TTL_SECS:
+        return cached[1]
     if db_enabled():
-        return db_load_tokens(session_id)
-    return _file_load_tokens(session_id)
+        tokens = db_load_tokens(session_id)
+    else:
+        tokens = _file_load_tokens(session_id)
+    _token_cache[session_id] = (time.time(), tokens)
+    return tokens
 
 
 def save_tokens(session_id: str, tokens: dict[str, Any] | None) -> None:
+    _token_cache[session_id] = (time.time(), tokens)
     if db_enabled():
         db_save_tokens(session_id, tokens)
     else:
