@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import date
 from typing import Any
 
 import httpx
@@ -12,6 +13,7 @@ from pydantic import BaseModel
 
 from app.config import get_settings
 from app.demo_state import get_demo_state, set_connected
+from app.tax_export import build_tax_pack, render_csv, render_pdf
 from app.wassist import (
     handle_byoa_webhook,
     handle_wassist_message,
@@ -94,6 +96,49 @@ async def receipts_upload(
     image_bytes = await file.read() if file else b""
     reply = await store_receipt_stub(connection_id, image_bytes)
     return {"ok": True, "message": reply}
+
+
+def _parse_as_of(as_of: str) -> date:
+    try:
+        return date.fromisoformat(as_of)
+    except ValueError:
+        return date.today()
+
+
+@router.get("/files/mtd-summary.csv")
+@router.head("/files/mtd-summary.csv")
+async def mtd_summary_csv(connection_id: str = Query(...), as_of: str = Query("")) -> Response:
+    """Stateless — regenerates the tax pack fresh from Xero on every request.
+
+    Explicit HEAD support matters here: Wassist does a HEAD request to check the
+    content type before accepting a document-message URL, and a plain @router.get
+    doesn't answer HEAD, so Wassist saw a 405 (JSON body) and rejected the file
+    as "unsupported media type application/json" instead of the real PDF/CSV type.
+    """
+    if not is_connected(connection_id):
+        raise HTTPException(400, "Xero isn't connected for this org.")
+    data = await build_tax_pack(connection_id, _parse_as_of(as_of))
+    body = render_csv(data)
+    return Response(
+        content=body,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="mtd-{data["mtd_quarter"]}-summary.csv"'},
+    )
+
+
+@router.get("/files/mtd-summary.pdf")
+@router.head("/files/mtd-summary.pdf")
+async def mtd_summary_pdf(connection_id: str = Query(...), as_of: str = Query("")) -> Response:
+    """Stateless — regenerates the tax pack fresh from Xero on every request."""
+    if not is_connected(connection_id):
+        raise HTTPException(400, "Xero isn't connected for this org.")
+    data = await build_tax_pack(connection_id, _parse_as_of(as_of))
+    body = render_pdf(data)
+    return Response(
+        content=body,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="mtd-{data["mtd_quarter"]}-summary.pdf"'},
+    )
 
 
 @router.post("/api/whatsapp/link")

@@ -512,6 +512,7 @@ async def _byoa_turn_async(
 
     if phone:
         _store_recent_reply(phone, user_text, reply)
+        _maybe_send_document_bubble(phone, reply)
     logger.info("BYOA final callback len=%d url=%s", len(reply), reply_callback[:70])
     await send_byoa_reply(reply_callback, reply)
 
@@ -547,6 +548,7 @@ async def _byoa_receipt_turn_async(
 
     if phone:
         _store_recent_reply(phone, caption, reply)
+        _maybe_send_document_bubble(phone, reply)
     logger.info("BYOA final receipt callback len=%d url=%s", len(reply), reply_callback[:70])
     await send_byoa_reply(reply_callback, reply)
 
@@ -582,6 +584,73 @@ async def send_byoa_reply(reply_callback: str, content: str) -> None:
             )
     except Exception:
         logger.exception("failed to POST BYOA reply_callback url=%s", reply_callback[:80])
+
+
+_OWN_FILE_URL = re.compile(r"https?://\S+/files/mtd-summary\.pdf\?\S+")
+
+
+def _maybe_send_document_bubble(phone: str, reply: str) -> None:
+    """Fire-and-forget: if a reply contains our own MTD PDF link, also try
+    delivering it as a native WhatsApp document bubble (better UX than a bare
+    link), without blocking or affecting the guaranteed plain-text reply."""
+    if not phone:
+        return
+    match = _OWN_FILE_URL.search(reply)
+    if not match:
+        return
+    asyncio.create_task(
+        send_document_via_wassist(phone, match.group(0), "Your MTD tax pack")
+    )
+
+
+async def send_document_via_wassist(phone: str, file_url: str, caption: str = "") -> bool:
+    """Send a file as a native WhatsApp document bubble, via Wassist's REST API
+    (not the BYOA reply_callback — a separate, fully-documented mechanism):
+    look up the conversation for this phone, then POST a "unified" message with
+    a media URL. Verified working end-to-end (Wassist fetches the file, uploads
+    it to WhatsApp's media API, confirms mimeType) — but that round trip takes
+    30-45s, hence the generous timeout below.
+    """
+    settings = get_settings()
+    if not settings.wassist_api_key:
+        return False
+    headers = {"X-API-Key": settings.wassist_api_key, "Content-Type": "application/json"}
+    base = settings.wassist_api_base.rstrip("/")
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            lookup = await client.get(
+                f"{base}/api/v1/conversations/",
+                headers=headers,
+                # Wassist stores contact numbers without the leading "+"
+                params={"contact": phone.lstrip("+")},
+            )
+            lookup.raise_for_status()
+            results = lookup.json().get("results") or []
+            if not results:
+                logger.info("send_document_via_wassist: no conversation found for phone=%s", phone)
+                return False
+            conversation_id = results[0]["id"]
+
+            send = await client.post(
+                f"{base}/api/v1/conversations/{conversation_id}/messages/",
+                headers=headers,
+                json={
+                    "type": "unified",
+                    "unified": {"text": caption[:1024], "media": {"url": file_url}},
+                },
+            )
+            if send.status_code >= 400:
+                logger.error(
+                    "send_document_via_wassist failed status=%s body=%s",
+                    send.status_code,
+                    send.text[:300],
+                )
+                return False
+            logger.info("send_document_via_wassist OK conversation=%s", conversation_id)
+            return True
+    except Exception:
+        logger.exception("send_document_via_wassist errored for phone=%s", phone)
+        return False
 
 
 async def handle_byoa_webhook(raw: dict[str, Any]) -> dict[str, str]:
@@ -685,6 +754,7 @@ async def handle_byoa_webhook(raw: dict[str, Any]) -> dict[str, str]:
                 phone_key=phone_key,
             )
             logger.info("BYOA sync reply phone=%s len=%d", phone or "?", len(reply))
+            _maybe_send_document_bubble(phone, reply)
             return byoa_response(reply)
         except Exception as exc:
             logger.exception("BYOA sync turn failed")

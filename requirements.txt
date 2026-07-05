@@ -7,3 +7,4 @@ pydantic-settings>=2.8.0
 xero-python>=9.0.0
 ai[anthropic,mcp]>=0.2.1
 psycopg[binary]>=3.2.0
+fpdf2>=2.8.0

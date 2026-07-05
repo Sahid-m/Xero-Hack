@@ -19,6 +19,7 @@ from app.agent.tools.xero_serialize import (
     slim_payment,
     tool_result,
 )
+from app.config import get_settings
 from app.session_context import xero_connection_id
 from app.xero_client import get_accounting_api
 
@@ -524,6 +525,45 @@ async def mtd_quarter_summary(as_of_date: str = "") -> str:
 
 
 @ai.tool
+async def prepare_mtd_tax_pack(as_of_date: str = "") -> str:
+    """
+    Prepare a quarterly tax-prep pack for Making Tax Digital: this quarter's turnover
+    and expenses mapped into HMRC's official self-employment expense categories, as a
+    downloadable CSV and PDF.
+
+    This is NOT a submission to HMRC — MTD requires filing through HMRC-recognised
+    software connected directly to HMRC's API, which requires formal software-vendor
+    accreditation. This preps the numbers in HMRC's own category shape so the user (or
+    their accountant) isn't starting from a raw Xero export. Say this plainly if asked.
+    """
+    from app.tax_export import build_tax_pack
+
+    as_of = _parse_due_date(as_of_date) or date.today()
+    connection_id = xero_connection_id()
+    data = await build_tax_pack(connection_id, as_of)
+
+    settings = get_settings()
+    base = (settings.public_base_url or "").rstrip("/")
+    params = f"connection_id={connection_id}&as_of={as_of.isoformat()}"
+    csv_url = f"{base}/files/mtd-summary.csv?{params}"
+    pdf_url = f"{base}/files/mtd-summary.pdf?{params}"
+
+    cat_lines = "; ".join(f"{c['category']}: £{c['amount_gbp']:,.2f}" for c in data["categories"][:4])
+    return tool_result(
+        **data,
+        csv_url=csv_url,
+        pdf_url=pdf_url,
+        audit=(
+            f"MTD {data['mtd_quarter']} tax pack ready — turnover £{data['turnover_gbp']:,.2f}, "
+            f"expenses £{data['total_expenses_gbp']:,.2f} across {len(data['categories'])} HMRC "
+            f"categories ({cat_lines}{'...' if len(data['categories']) > 4 else ''}), net profit "
+            f"£{data['net_profit_gbp']:,.2f}. Download: {csv_url} or {pdf_url}. This preps the "
+            f"numbers for filing — it isn't itself a submission to HMRC."
+        ),
+    )
+
+
+@ai.tool
 async def get_aged_receivables_for_contact(
     contact_id: str,
     as_of_date: str = "",
@@ -751,4 +791,5 @@ QUERY_TOOLS: list[ai.AgentTool] = [
     summarize_cash_position,
     find_reconciliation_matches,
     mtd_quarter_summary,
+    prepare_mtd_tax_pack,
 ]

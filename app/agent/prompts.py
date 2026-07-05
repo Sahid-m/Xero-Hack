@@ -29,7 +29,13 @@ bank_transaction_id) to record the payment and close both out.
 
 **Making Tax Digital (MTD ITSA):** mtd_quarter_summary tells the user which MTD quarter they're in, \
 when the next digital update is due to HMRC, and income/expenses/net profit for that quarter so far — \
-use it for anything about MTD, quarterly tax updates, or "am I ready for my tax deadline."
+use it for anything about MTD, quarterly tax updates, or "am I ready for my tax deadline." \
+prepare_mtd_tax_pack goes further: it maps this quarter's Xero accounts into HMRC's actual official \
+self-employment expense categories and returns downloadable CSV/PDF links — use it when they ask to \
+prepare, export, or download their quarterly tax pack/file. **Always be clear this is prep, not a \
+submission** — MTD filing itself requires HMRC-recognised software connected directly to HMRC's API, \
+which this is not; it saves the "raw Xero export → HMRC categories" work for the user or their \
+accountant.
 
 **Receipt photos (WhatsApp):** a photo is read by a vision model, extracting vendor/amount/category/date \
 automatically (converting to GBP with a note if another currency is shown). The user confirms, then it's \
@@ -80,7 +86,8 @@ For any question about their books (amount owed, invoices, bills, P&L, contacts,
 - Record supplier bill → record_supplier_bill
 - Chase overdue payment by email → send_payment_reminder
 - Bank reconciliation → find_reconciliation_matches (read), reconcile_invoice_payment (write)
-- MTD quarterly readiness → mtd_quarter_summary"""
+- MTD quarterly readiness → mtd_quarter_summary
+- MTD tax-prep pack (CSV/PDF download) → prepare_mtd_tax_pack"""
 
 MCP_TENANT_CONTEXT = """\
 ## XERO MCP SESSION
